@@ -1,0 +1,438 @@
+{# One pane's content. Swapped in by an HTMX GET on tab click.
+   Client-side dirty tracking lives in programmer_batch.js — it watches
+   .cv-value-input inputs on this table, marks their row dirty on change,
+   and drives the Write/Cancel buttons at the top of the pane.
+
+   Layout is authored by JMRI's pane XML (<column>/<row>/<display>/…);
+   the ``pane_layout_tree`` walker builds a nested dict of nodes and we
+   render it recursively via the ``layout_node`` macro below. #}
+
+{% if active_slug == "roster-entry" %}
+  {# ----- synthetic Roster Entry pane ----- #}
+  <div class="card">
+    <h3>Roster Entry</h3>
+    <table class="roster-entry-fields">
+      <tr><th>ID</th><td class="mono">{{ loco.id }}</td></tr>
+      <tr><th>DCC Address</th><td class="mono">{{ loco.dccAddress }}{% if loco.longAddress %} (long){% else %} (short){% endif %}</td></tr>
+      <tr><th>Road Name</th><td>{{ loco.roadName or "" }}</td></tr>
+      <tr><th>Road Number</th><td>{{ loco.roadNumber or "" }}</td></tr>
+      <tr><th>Decoder Family</th><td>{{ family or "unknown" }}</td></tr>
+      <tr><th>Decoder Model</th><td>{{ model or "unknown" }}</td></tr>
+      <tr><th>Owner</th><td>{{ loco.owner or "" }}</td></tr>
+      <tr><th>Manufacturer</th><td>{{ loco.mfg or "" }}</td></tr>
+      <tr><th>Model</th><td>{{ loco.model or "" }}</td></tr>
+      {% if loco.comment %}<tr><th>Comment</th><td>{{ loco.comment }}</td></tr>{% endif %}
+    </table>
+    <p class="muted" style="margin-top:1rem">
+      Edit these on the roster entry page — this pane is read-only.
+    </p>
+  </div>
+
+{% else %}
+  {# ----- decoder pane ----- #}
+  <div class="card programmer-pane"
+       data-loco-id="{{ loco_id }}"
+       data-pane-slug="{{ active_slug }}"
+       {% if loco.fileName %}data-file-name="{{ loco.fileName }}"{% endif %}>
+
+    <div class="pane-header row" style="align-items:center;gap:0.5rem">
+      <h3 style="margin:0;flex:1">{{ pane.name }}</h3>
+      <span class="dirty-count muted small" data-role="dirty-count">0 changed</span>
+      <button type="button" class="pane-read-btn"
+              data-scope="pane">Read pane</button>
+      <button type="button" class="pane-write-btn ok"
+              data-scope="pane" disabled>Write pane</button>
+      <button type="button" class="pane-write-btn"
+              data-scope="all" disabled>Write all dirty</button>
+      <button type="button" class="pane-cancel-btn danger"
+              hidden>Cancel</button>
+    </div>
+
+    <div class="batch-progress" hidden data-role="batch-progress">
+      <div class="thermometer" role="progressbar"
+           aria-valuemin="0" aria-valuemax="100">
+        <div class="thermometer-fill" data-role="batch-fill"></div>
+      </div>
+      <p class="muted small" data-role="batch-status">Queuing…</p>
+    </div>
+
+    {% if pane.pane and pane.pane.has_dcc_address %}
+      <div class="dccaddress-widget">
+        <span class="muted">DCC address</span>
+        <span class="mono">{{ loco.dccAddress }}</span>
+        {% if loco.longAddress %}<span class="badge">long</span>{% else %}<span class="badge">short</span>{% endif %}
+      </div>
+    {% endif %}
+
+    {# ----- Rich layout: walk the pane's authored column/row tree ----- #}
+    {% macro layout_node(node) -%}
+      {%- if node.type == "column" -%}
+        <div class="pane-col">
+          {% for child in node.children %}{{ layout_node(child) }}{% endfor %}
+        </div>
+      {%- elif node.type == "row" -%}
+        <div class="pane-row">
+          {% for child in node.children %}{{ layout_node(child) }}{% endfor %}
+        </div>
+      {%- elif node.type == "group" -%}
+        <div class="pane-group">
+          {% for child in node.children %}{{ layout_node(child) }}{% endfor %}
+        </div>
+      {%- elif node.type == "label" -%}
+        <div class="pane-label">{{ node.text | safe }}</div>
+      {%- elif node.type == "separator" -%}
+        <hr class="pane-separator" />
+      {%- elif node.type == "display" -%}
+        {%- set row = row_by_item.get(node.item) -%}
+        {%- if row -%}{{ variable_widget(row) }}{%- endif -%}
+      {%- elif node.type == "cvtable" -%}
+        {# handled below in the raw-CV section #}
+      {%- elif node.type == "speedtable" -%}
+        {# handled below in the speed-table section #}
+      {%- elif node.type == "dccaddress" -%}
+        {# handled above in the pane header for panes with has_dcc_address #}
+      {%- elif node.type == "fnmapping" -%}
+        {%- if fnmap_matrix and fnmap_matrix.fn_labels and fnmap_matrix.columns -%}
+          {{ fnmap_grid(fnmap_matrix) }}
+        {%- endif -%}
+      {%- elif node.type == "grid" -%}
+        {{ grid_container(node) }}
+      {%- endif -%}
+    {%- endmacro %}
+
+    {# ----- Grid container / cells (Swing GridBagLayout emulation) -----
+       JMRI's grid is a rectangular sparse mapping of ``<griditem
+       gridx=N gridy=M>`` cells to child nodes. Each cell can hold a
+       label, a display (checkbox / dropdown / etc.), or nested
+       containers. We render as a CSS grid where the maximum gridx+1
+       gives the column count. Displays with ``format="checkbox"`` or
+       an empty ``label=""`` render compactly (no widget-row chrome). #}
+    {% macro grid_container(node) -%}
+      {%- set max_x = namespace(v=0) -%}
+      {%- for c in node.children -%}
+        {%- if c.gridx is not none and c.gridx > max_x.v -%}
+          {%- set max_x.v = c.gridx -%}
+        {%- endif -%}
+      {%- endfor -%}
+      <div class="grid-container" style="grid-template-columns: repeat({{ max_x.v + 1 }}, auto);">
+        {% for c in node.children -%}
+          {{ grid_cell(c, max_x.v + 1) }}
+        {%- endfor %}
+      </div>
+    {%- endmacro %}
+
+    {% macro grid_cell(node, col_count) -%}
+      {%- set anchor_class = {
+            "LINE_END": "gc-end",
+            "LINE_START": "gc-start",
+            "CENTER": "gc-center",
+            "FIRST_LINE_END": "gc-end",
+            "FIRST_LINE_START": "gc-start",
+            "LAST_LINE_END": "gc-end",
+            "LAST_LINE_START": "gc-start",
+          }.get(node.anchor, "") -%}
+      {%- set style = [] -%}
+      {%- if node.gridx is not none -%}
+        {%- set _ = style.append("grid-column-start: " ~ (node.gridx + 1)) -%}
+      {%- endif -%}
+      {%- if node.gridy is not none -%}
+        {%- set _ = style.append("grid-row-start: " ~ (node.gridy + 1)) -%}
+      {%- endif -%}
+      {%- if node.gridwidth == "REMAINDER" -%}
+        {%- set _ = style.append("grid-column-end: -1") -%}
+      {%- elif node.gridwidth and node.gridwidth != "1" -%}
+        {%- set _ = style.append("grid-column-end: span " ~ node.gridwidth) -%}
+      {%- endif -%}
+      <div class="grid-cell {{ anchor_class }}" style="{{ style | join('; ') }}">
+        {% for child in node.children %}
+          {%- if child.type == "display" -%}
+            {%- set row = row_by_item.get(child.item) -%}
+            {%- if row -%}{{ compact_widget(row, child) }}{%- endif -%}
+          {%- elif child.type == "label" -%}
+            <span class="grid-label">{{ child.text | safe }}</span>
+          {%- else -%}
+            {{ layout_node(child) }}
+          {%- endif -%}
+        {% endfor %}
+      </div>
+    {%- endmacro %}
+
+    {# ----- Compact widget for grid cells -----
+       Renders the input/select/checkbox only, no label/CV/stored/Read
+       chrome. Format="checkbox" wraps as a bool (0=unchecked, else
+       checked). The widget still carries data-item/data-cv/data-current
+       so the pane's batch-read + dirty tracking pick it up. #}
+    {% macro compact_widget(row, node) -%}
+      {%- set is_checkbox = node.format == "checkbox" -%}
+      {%- set label_suppressed = node.label_override is not none and node.label_override == "" -%}
+      <span class="grid-widget"
+            data-item="{{ row.item }}"
+            data-cv="{{ row.cv }}"
+            data-kind="{{ row.kind }}"
+            data-current="{% if row.current_value is not none %}{{ row.current_value }}{% endif %}">
+        {%- if is_checkbox -%}
+          <input type="checkbox" class="cv-value-input"
+                 data-cv="{{ row.cv }}"
+                 {% if row.current_value %}checked{% endif %}
+                 {% if row.read_only %}disabled{% endif %} />
+        {%- elif row.kind == "enum" and row.enum_choices -%}
+          {%- if not label_suppressed and row.label -%}
+            <span class="grid-widget-label">{{ row.label | safe }}</span>
+          {%- endif -%}
+          <select class="cv-value-input" data-cv="{{ row.cv }}">
+            {% for choice in row.enum_choices %}
+            <option value="{{ choice.value }}"
+                {% if choice.value == row.current_value %}selected{% endif %}>
+              {{ choice.choice }}
+            </option>
+            {% endfor %}
+          </select>
+        {%- else -%}
+          {%- if not label_suppressed and row.label -%}
+            <span class="grid-widget-label">{{ row.label | safe }}</span>
+          {%- endif -%}
+          <input type="number" class="cv-value-input"
+                 data-cv="{{ row.cv }}"
+                 min="0" max="{{ row.wire_max }}"
+                 value="{{ row.current_value if row.current_value is not none else '' }}"
+                 {% if row.read_only %}disabled{% endif %} />
+        {%- endif -%}
+      </span>
+    {%- endmacro %}
+
+    {% macro fnmap_grid(m) -%}
+      {# JMRI's function-map matrix. Rows = F-keys (STOP/DRIVE/FL/F0-F28);
+         columns = physical outputs, headed with a two-line label
+         (Output number on top, decoder-declared name below when
+         defined). Each cell is a checkbox that toggles a single CV
+         bit variable and carries ``data-item``/``data-cv`` so the
+         existing dirty tracking + pane batch Read/Write pick it up. #}
+      <div class="fnmap-wrapper">
+        <table class="fnmap">
+          <thead>
+            <tr class="fnmap-caption-row">
+              <th></th>
+              <th colspan="{{ m.columns | length }}" class="fnmap-caption">
+                Logical OR of Outputs
+              </th>
+            </tr>
+            <tr class="fnmap-header-num">
+              <th></th>
+              {% for col in m.columns %}<th>{{ col.num }}</th>{% endfor %}
+            </tr>
+            <tr class="fnmap-header-label">
+              <th></th>
+              {% for col in m.columns %}
+                <th>
+                  {% if col.label_lines %}
+                    {% for line in col.label_lines %}
+                      <div class="fnmap-hlabel-line">{{ line }}</div>
+                    {% endfor %}
+                  {% else %}
+                    &nbsp;
+                  {% endif %}
+                </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for fn in m.fn_labels %}
+            <tr>
+              <th>{{ fn }}</th>
+              {% for col in m.columns %}
+                {%- set row = m.cells.get((fn, col.num)) -%}
+                <td>
+                  {% if row %}
+                    <span class="fnmap-cell"
+                          data-item="{{ row.item }}"
+                          data-cv="{{ row.cv }}"
+                          data-kind="{{ row.kind }}"
+                          data-current="{{ row.current_value if row.current_value is not none else '' }}">
+                      <input type="checkbox"
+                             class="cv-value-input fnmap-check"
+                             data-cv="{{ row.cv }}"
+                             {% if row.current_value %}checked{% endif %}
+                             {% if row.read_only %}disabled{% endif %} />
+                    </span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {%- endmacro %}
+
+    {% macro variable_widget(row) -%}
+      <div class="pane-widget" data-item="{{ row.item }}"
+           data-cv="{{ row.cv }}"
+           data-kind="{{ row.kind }}"
+           data-current="{% if row.kind == 'composite' %}{{ row.current_choice or '' }}{% elif row.current_value is not none %}{{ row.current_value }}{% endif %}">
+        <div class="pane-widget-line">
+          <div class="pane-widget-info">
+            <span class="pane-widget-label">{{ (row.label or row.item) | safe }}</span>
+            <span class="pane-widget-cv mono">CV {{ row.cv_display }}</span>
+          </div>
+          <div class="pane-widget-actions">
+            <span class="pane-widget-stored mono" data-role="stored">
+              {% if row.current_value is none %}stored: —
+              {% else %}stored: {{ row.current_value }}{% endif %}
+            </span>
+            <span class="pane-widget-input">
+              {% if row.kind == "enum" and row.enum_choices %}
+                <select class="cv-value-input" data-cv="{{ row.cv }}">
+                  {% for choice in row.enum_choices %}
+                  <option value="{{ choice.value }}"
+                      {% if choice.value == row.current_value %}selected{% endif %}>
+                    {{ choice.choice }}
+                  </option>
+                  {% endfor %}
+                </select>
+              {% elif row.kind == "composite" and row.composite_choices %}
+                <select class="cv-value-input composite-select" data-item="{{ row.item }}">
+                  {% if not row.current_choice %}
+                  <option value="" selected>(custom)</option>
+                  {% endif %}
+                  {% for choice in row.composite_choices %}
+                  <option value="{{ choice.choice }}"
+                          data-settings='{{ choice.settings | tojson }}'
+                          {% if choice.choice == row.current_choice %}selected{% endif %}>
+                    {{ choice.choice }}
+                  </option>
+                  {% endfor %}
+                </select>
+              {% elif row.kind == "constant" %}
+                <span class="mono muted">{{ row.constant_value }}</span>
+              {% elif row.kind == "split_datetime" %}
+                {# Read-only on JMRI Java too (SplitDateTimeVariableValue.setValue
+                   is a no-op "skipping set of date/time value"). The pane
+                   layer formats the stored integer against the variable's
+                   base/factor/unit/display attributes; see
+                   ``routes._format_split_datetime``. #}
+                <span class="mono" title="raw: {{ row.current_value if row.current_value is not none else '--' }}"
+                      >{{ row.datetime_display or '--' }}</span>
+              {% else %}
+                <input type="number" class="cv-value-input"
+                       data-cv="{{ row.cv }}"
+                       min="0" max="{{ row.wire_max }}"
+                       value="{{ row.current_value if row.current_value is not none else '' }}"
+                       {% if row.read_only %}disabled{% endif %} />
+              {% endif %}
+            </span>
+            <span class="pane-widget-btns">
+              {% if not row.write_only %}
+              <button type="button" class="row-read-btn">Read</button>
+              {% else %}<span class="row-btn-placeholder"></span>{% endif %}
+              {% if not row.read_only and row.kind != "constant" %}
+              <button type="button" class="row-write-btn">Write</button>
+              {% else %}<span class="row-btn-placeholder"></span>{% endif %}
+            </span>
+            <span class="row-read-status" data-role="row-read-status"></span>
+          </div>
+        </div>
+        {% if row.tooltip %}<div class="pane-widget-tooltip muted small">{{ row.tooltip | safe }}</div>{% endif %}
+      </div>
+    {%- endmacro %}
+
+    {% if layout_tree %}
+    <div class="pane-layout">
+      {{ layout_node(layout_tree) }}
+    </div>
+    {% endif %}
+
+    {# ----- Speed Table pane: 28 step rows (still tabular for now) ----- #}
+    {% if variable_rows and is_speed_table_pane %}
+    <h4>Speed table</h4>
+    <table class="cv-variables">
+      <thead>
+        <tr>
+          <th>Step</th><th>CV</th><th>Stored value</th><th>New value</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in variable_rows %}
+        {% if row.kind == "decimal" and row.item.startswith("Speed Table[") %}
+        <tr data-item="{{ row.item }}"
+            data-cv="{{ row.cv }}"
+            data-kind="{{ row.kind }}"
+            data-current="{{ row.current_value if row.current_value is not none else '' }}">
+          <td>{{ row.label or row.item }}</td>
+          <td class="mono">{{ row.cv_display }}</td>
+          <td class="mono" data-role="stored">
+            {% if row.current_value is none %}<span class="muted">—</span>
+            {% else %}{{ row.current_value }}{% endif %}
+          </td>
+          <td>
+            <input type="number" class="cv-value-input"
+                   data-cv="{{ row.cv }}"
+                   min="0" max="255"
+                   value="{{ row.current_value if row.current_value is not none else '' }}" />
+          </td>
+          <td class="row" style="gap:0.25rem">
+            <button type="button" class="row-read-btn">Read</button>
+            <span class="row-read-status" data-role="row-read-status"></span>
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {# ----- Raw CV table (CVs pane) ----- #}
+    {% if pane.pane and pane.pane.has_cvtable %}
+      <h4>Raw CV table</h4>
+      <p class="muted small">
+        Every CV the decoder defines is listed. Use "Add CV" to inspect
+        a CV that isn't in the catalog — plain
+        (<code class="mono">7</code>) or indexed
+        (<code class="mono">16.1.275</code>) both work.
+      </p>
+      <div class="row" style="align-items:flex-end;gap:0.5rem;margin-bottom:0.5rem">
+        <label>Add CV
+          <input type="text" id="cv-add-input" placeholder="e.g. 7 or 16.1.275"
+                 style="width:12em" />
+        </label>
+        <button type="button" id="cv-add-btn">Add row</button>
+      </div>
+      <table class="cv-table" id="raw-cv-table">
+        <thead><tr>
+          <th>CV</th><th>Stored</th><th>New value</th><th></th>
+        </tr></thead>
+        <tbody id="raw-cv-tbody">
+        {% for row in raw_cv_rows %}
+          <tr data-cv-name="{{ row.name }}">
+            <td class="mono">{{ row.name }}</td>
+            <td class="mono" data-role="stored">
+              {% if row.value is not none %}
+                {{ row.value }} <span class="muted">(0x{{ row.hex }})</span>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <input type="number" class="raw-cv-value-input"
+                     min="0" max="255"
+                     value="{{ row.value if row.value is not none else 0 }}" />
+            </td>
+            <td class="row" style="gap:0.25rem">
+              <button type="button" class="raw-cv-read-btn">Read</button>
+              <button type="button" class="raw-cv-write-btn">Write</button>
+              <span class="raw-cv-status muted small" data-role="raw-cv-status"></span>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if not raw_cv_rows %}
+      <p class="muted small">No decoder loaded and no CVs added yet —
+        load a catalog or use "Add CV" to inspect a specific CV.</p>
+      {% endif %}
+    {% endif %}
+
+    {% if not variable_rows and not (pane.pane.has_cvtable or pane.pane.has_dcc_address or pane.pane.has_speed_table or pane.pane.has_fnmapping) %}
+    <p class="muted">This pane has no rows for the loaded decoder.</p>
+    {% endif %}
+  </div>
+{% endif %}

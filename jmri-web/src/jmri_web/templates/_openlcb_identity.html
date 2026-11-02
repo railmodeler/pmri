@@ -1,0 +1,51 @@
+{# Our node's SNIP identity card. Fixed vendor fields are readonly;
+   user_name + user_description are the operator-editable pair per
+   S-9.7.4.5. Post-save the fragment re-renders in place. #}
+<div id="openlcb-identity" class="card">
+  <h3 style="margin-top:0">Our identity (SNIP)</h3>
+  {% if not snip %}
+  <p class="muted small">Identity not available.</p>
+  {% else %}
+  <table class="cv-variables" style="width:100%;margin-bottom:0.5rem">
+    <tbody>
+      <tr>
+        <th style="width:12em">Manufacturer</th>
+        <td>{{ snip.manufacturer or '—' }}</td>
+      </tr>
+      <tr>
+        <th>Model</th>
+        <td>{{ snip.model or '—' }}</td>
+      </tr>
+      <tr>
+        <th>Hardware version</th>
+        <td>{{ snip.hardware_version or '—' }}</td>
+      </tr>
+      <tr>
+        <th>Software version</th>
+        <td>{{ snip.software_version or '—' }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <form hx-post="/openlcb/identity"
+        hx-target="#openlcb-identity" hx-swap="outerHTML"
+        class="row" style="gap:0.5rem;align-items:flex-end;flex-wrap:wrap">
+    <label style="flex:1;min-width:14em">User name
+      <input type="text" name="user_name"
+             value="{{ snip.user_name or '' }}"
+             maxlength="62"
+             style="width:100%" />
+    </label>
+    <label style="flex:2;min-width:20em">User description
+      <input type="text" name="user_description"
+             value="{{ snip.user_description or '' }}"
+             maxlength="62"
+             style="width:100%" />
+    </label>
+    <button type="submit">Save identity</button>
+  </form>
+  <p class="muted small" style="margin-top:0.5rem;margin-bottom:0">
+    Persisted to disk; peers see the new values on their next SNIP
+    probe.
+  </p>
+  {% endif %}
+</div>

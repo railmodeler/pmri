@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Programmer{% endblock %}
+{% block content %}
+<h2>Decoder Programmer</h2>
+
+<div class="card" id="programmer-availability">
+  <h3>Connection capabilities</h3>
+  {% if availability %}
+  <div class="row">
+    {% for entry in availability %}
+      <span class="badge {% if entry.available %}ok{% else %}err{% endif %}">
+        {{ entry.mode }}: {{ "available" if entry.available else "n/a" }}
+      </span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <span class="badge err">No programmer on this connection</span>
+  {% endif %}
+  <p class="muted" style="margin-top:0.5rem">
+    Service-mode reads/writes use the connection's programming-track
+    programmer. Ops-mode requires an <code>address</code> field on each
+    request. The internal/loopback connection has no programmer; install
+    and select a driver that exposes one (today: <code>nce</code>).
+  </p>
+</div>
+
+<div class="card" id="catalog-card">
+  <div id="programmer-catalog">
+    {% include "_programmer_catalog.html" %}
+  </div>
+  {# Pre-fill the input from ``JMRI_DECODER_XML_ROOT`` if the
+     operator set it — one-click Load after that. Empty env var =
+     empty input = same behaviour as before this knob existed. #}
+  <form hx-post="/programmer/catalog/load" hx-target="#programmer-catalog"
+        hx-swap="innerHTML" class="row" style="margin-top:0.5rem">
+    <label style="flex:1">Load catalog from directory
+      <input type="text" name="directory" required
+             value="{{ decoder_xml_default }}"
+             placeholder="C:\\Program Files (x86)\\JMRI\\xml\\decoders" />
+    </label>
+    <button type="submit">Load</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Browse + pick a decoder</h3>
+  <div class="row browse-picker">
+    <div class="col">
+      <div class="pick-label">Manufacturer</div>
+      <select id="mfg-select"
+              hx-get="/programmer/decoders" hx-target="#families"
+              hx-swap="innerHTML" hx-trigger="change"
+              hx-include="this" name="mfg">
+        <option value="">— pick —</option>
+        {% for m in manufacturers %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+      </select>
+    </div>
+    <div id="families" class="col"></div>
+    <div id="models" class="col"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Identify decoder on the programming track</h3>
+  <p class="muted">Reads CV7 (decoder version) and CV8 (NMRA manufacturer
+  ID) via the active service-mode programmer, then matches against the
+  loaded catalog. Pick a candidate to auto-populate Manufacturer /
+  Family / Model above. Requires a decoder on the program track.</p>
+  <button type="button" hx-post="/programmer/identify"
+          hx-target="#identify-result" hx-swap="innerHTML">Identify</button>
+  <div id="identify-result" style="margin-top:1rem"></div>
+</div>
+
+<div class="card">
+  <h3>CV read/write</h3>
+  <div class="row">
+    <form hx-post="/programmer/cv/read" hx-target="#cv-result" hx-swap="innerHTML">
+      <label>CV <input type="number" name="cv" min="1" max="1024" value="1" /></label>
+      <label>Mode
+        <select name="mode">
+          <option value="service">service</option>
+          <option value="ops">ops</option>
+        </select>
+      </label>
+      <label>Address <input type="number" name="address" min="1" max="9999" /></label>
+      <button type="submit">Read</button>
+    </form>
+    <form hx-post="/programmer/cv/write" hx-target="#cv-result" hx-swap="innerHTML">
+      <label>CV <input type="number" name="cv" min="1" max="1024" value="1" /></label>
+      <label>Value <input type="number" name="value" min="0" max="255" value="0" /></label>
+      <label>Mode
+        <select name="mode">
+          <option value="service">service</option>
+          <option value="ops">ops</option>
+        </select>
+      </label>
+      <label>Address <input type="number" name="address" min="1" max="9999" /></label>
+      <button type="submit">Write</button>
+    </form>
+  </div>
+  <div id="cv-result" style="margin-top:1rem"></div>
+</div>
+
+<div id="variables-card" class="card" style="display:none">
+  <h3>Decoder variables</h3>
+  <div id="variables-list"></div>
+</div>
+
+<script>
+(function () {
+  document.addEventListener("htmx:afterSwap", (e) => {
+    if (e.target.id === "models") {
+      // When the user picks a model, fetch its variables.
+      const selects = e.target.querySelectorAll("select[name='model']");
+      selects.forEach((sel) => sel.addEventListener("change", () => {
+        const family = sel.dataset.family;
+        const model = sel.value;
+        if (!model) return;
+        const url = `/programmer/variables?family=${encodeURIComponent(family)}` +
+                    `&model=${encodeURIComponent(model)}`;
+        fetch(url).then(r => r.text()).then(html => {
+          document.getElementById("variables-list").innerHTML = html;
+          document.getElementById("variables-card").style.display = "block";
+        });
+      }));
+    }
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Sensors{% endblock %}
+{% block content %}
+<h2>Sensors</h2>
+
+<div class="card">
+  <form hx-post="/sensors/create" hx-target="#sensors-table" hx-swap="outerHTML" class="row">
+    <label>Add by system name
+      <input type="text" name="name" required pattern="[A-Z][A-Z0-9]*S[0-9]+"
+             placeholder="IS5" title="Example: IS5 (internal sensor 5)" />
+    </label>
+    <button type="submit">Create</button>
+  </form>
+  <p class="muted">On the internal connection the "simulate" buttons can
+  force a sensor active or inactive. On real-hardware connections the state
+  comes from the layout and these buttons have no effect.</p>
+</div>
+
+<div class="card">
+  {% include "_sensors_table.html" %}
+</div>
+{% endblock %}

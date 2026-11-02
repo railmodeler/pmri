@@ -1,0 +1,58 @@
+{# See _turnout_row_edit.html for why <form> is not wrapped around the
+   row. Every input hx-includes 'closest tr' so the update endpoint sees
+   the full field set even without a wrapping <form>. #}
+{% set _e = e %}
+{% set _thumb_url = _e.iconUrl or _e.imageUrl %}
+<tr data-roster="{{ _e.id }}" class="roster-edit-row">
+  <td>
+    {% if _thumb_url %}
+    <img src="{{ _thumb_url }}" alt="{{ _e.id }} icon"
+         style="max-height:2em;max-width:4em;object-fit:contain;vertical-align:middle" />
+    {% endif %}
+  </td>
+  <td class="mono">{{ _e.id }}</td>
+  <td>
+    <input type="text" name="dccAddress" value="{{ _e.dccAddress }}"
+           pattern="[0-9]+" required style="width:5em" />
+    <label style="display:inline-flex;align-items:center;gap:0.25rem">
+      <input type="checkbox" name="longAddress" value="1"
+             {% if _e.longAddress %}checked{% endif %} />
+      long
+    </label>
+    <br/>
+    <label class="small muted">Max %
+      <input type="number" name="maxSpeedPct"
+             value="{{ _e.maxSpeedPct if _e.maxSpeedPct is not none else 100 }}"
+             min="0" max="100" style="width:6em" />
+    </label>
+  </td>
+  <td>
+    <input type="text" name="decoderFamily" value="{{ _e.decoderFamily or '' }}"
+           placeholder="ESU LokSound v5" />
+    <input type="text" name="decoderModel" value="{{ _e.decoderModel or '' }}"
+           placeholder="LokSound 5" />
+    <br/>
+    <input type="text" name="mfg" value="{{ _e.mfg or '' }}"
+           placeholder="Loco mfg" style="width:8em" />
+    <input type="text" name="model" value="{{ _e.model or '' }}"
+           placeholder="Loco model" style="width:8em" />
+  </td>
+  <td>
+    <input type="text" name="roadName" value="{{ _e.roadName or '' }}"
+           placeholder="Road" />
+    <input type="text" name="roadNumber" value="{{ _e.roadNumber or '' }}"
+           placeholder="Number" style="width:6em" />
+    <br/>
+    <input type="text" name="owner" value="{{ _e.owner or '' }}"
+           placeholder="Owner" style="width:8em" />
+  </td>
+  <td>
+    <button type="button"
+            hx-post="/roster/{{ _e.id }}/update"
+            hx-include="closest tr"
+            hx-target="closest tr" hx-swap="outerHTML">Save</button>
+    <button type="button"
+            hx-get="/roster/{{ _e.id }}/row"
+            hx-target="closest tr" hx-swap="outerHTML">Cancel</button>
+  </td>
+</tr>

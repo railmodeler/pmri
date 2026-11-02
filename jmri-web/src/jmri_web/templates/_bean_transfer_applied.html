@@ -1,0 +1,27 @@
+{% if error %}
+<div class="card" style="border-color:var(--err,#c33)">
+  <strong style="color:var(--err,#c33)">Apply failed:</strong>
+  <span>{{ error }}</span>
+</div>
+{% else %}
+<div class="card" style="border-color:var(--ok,#3a3)">
+  <strong style="color:var(--ok,#3a3)">Copied.</strong>
+  <table style="margin-top:0.4rem">
+    <thead><tr><th>Type</th><th>Rows written</th></tr></thead>
+    <tbody>
+      {% for kind, n in copied.items() %}
+      <tr><td>{{ kind }}</td><td>{{ n }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if target_is_active %}
+  <p class="muted small">Target is the active profile — live bean
+    managers were refreshed. New / updated turnouts, sensors, and
+    lights are visible on their pages now.</p>
+  {% else %}
+  <p class="muted small">Target isn't the active profile — no live
+    managers to refresh. Load the target profile to see the beans in
+    the running server.</p>
+  {% endif %}
+</div>
+{% endif %}

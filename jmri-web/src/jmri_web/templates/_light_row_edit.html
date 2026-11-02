@@ -1,0 +1,24 @@
+{# See _turnout_row_edit.html for why <form> is not wrapped around the
+   row. #}
+{% set _l = l %}
+<tr data-light="{{ _l.name }}" class="light-edit-row">
+  <td class="mono">{{ _l.name }}</td>
+  <td>
+    <input type="text" name="userName" value="{{ _l.userName or '' }}"
+           placeholder="User name"
+           hx-post="/lights/{{ _l.name }}/update"
+           hx-trigger="keydown[key=='Enter']"
+           hx-include="closest tr"
+           hx-target="closest tr" hx-swap="outerHTML" />
+  </td>
+  <td></td>
+  <td>
+    <button type="button"
+            hx-post="/lights/{{ _l.name }}/update"
+            hx-include="closest tr"
+            hx-target="closest tr" hx-swap="outerHTML">Save</button>
+    <button type="button"
+            hx-get="/lights/{{ _l.name }}/row"
+            hx-target="closest tr" hx-swap="outerHTML">Cancel</button>
+  </td>
+</tr>

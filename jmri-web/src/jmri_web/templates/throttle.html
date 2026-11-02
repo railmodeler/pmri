@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Throttle{% endblock %}
+{% block content %}
+<h2>Throttle
+  <span class="muted mono">Addr {{ address }}{% if long_address %} (long){% else %} (short){% endif %}</span>
+</h2>
+
+<div class="card">
+  <form method="get" action="/throttle" class="row" id="throttle-pick-form">
+    {% if roster %}
+    <label>Pick from roster
+      <select id="roster-picker">
+        <option value="">— choose loco —</option>
+        {% for entry in roster %}
+        <option value="{{ entry.id }}"
+                data-address="{{ entry.dccAddress }}"
+                data-long="{% if entry.longAddress %}1{% else %}0{% endif %}"
+                {% if entry.dccAddress|string == address|string and (entry.longAddress|default(False)) == long_address %}selected{% endif %}>
+          {{ entry.id }}{% if entry.roadName or entry.roadNumber %} — {{ entry.roadName }} {{ entry.roadNumber }}{% endif %} ({{ entry.dccAddress }}{% if entry.longAddress %} long{% endif %})
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>DCC address
+      <input id="address-input" type="number" name="address" min="1" max="9999" value="{{ address }}" />
+    </label>
+    <label style="display:flex;align-items:center;gap:0.25rem">
+      <input id="long-input" type="checkbox" name="long" value="1" {% if long_address %}checked{% endif %} />
+      Long address
+    </label>
+    <button type="submit">Pick</button>
+    <button type="button" class="danger"
+            hx-post="/throttle/{{ address }}/release"
+            hx-target="#throttle-status" hx-swap="innerHTML">Release</button>
+  </form>
+  <script>
+  (function () {
+    const picker = document.getElementById("roster-picker");
+    if (!picker) return;
+    picker.addEventListener("change", () => {
+      const opt = picker.options[picker.selectedIndex];
+      if (!opt || !opt.dataset.address) return;
+      document.getElementById("address-input").value = opt.dataset.address;
+      document.getElementById("long-input").checked = opt.dataset.long === "1";
+      document.getElementById("throttle-pick-form").submit();
+    });
+  })();
+  </script>
+</div>
+
+<div class="card">
+  <div id="throttle-status">
+    {% include "_throttle_status.html" %}
+  </div>
+  <div class="row" style="margin-top:1rem">
+    <label style="flex:1">Speed
+      <input type="range" id="speed-slider" min="0.0" max="1.0" step="0.01"
+             value="{{ (throttle.speed or 0) | abs }}" />
+    </label>
+  </div>
+  <div class="row">
+    {# The ``ok`` (green) class highlights the currently-commanded
+       direction. Server render sets it from ``throttle.forward``; the
+       WebSocket ``throttle`` push listener below re-syncs it live when
+       ANY client (consist fan-out, another browser tab, a script)
+       flips the direction. #}
+    <button id="dir-forward"
+            class="{% if throttle.forward %}ok{% endif %}"
+            hx-post="/throttle/{{ address }}/state" hx-vals='{"forward":1}'
+            hx-target="#throttle-status" hx-swap="innerHTML">Forward</button>
+    <button id="dir-reverse"
+            class="{% if not throttle.forward %}ok{% endif %}"
+            hx-post="/throttle/{{ address }}/state" hx-vals='{"forward":0}'
+            hx-target="#throttle-status" hx-swap="innerHTML">Reverse</button>
+    <button class="danger" onclick="estop({{ address }})">E-Stop</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Functions</h3>
+  <div class="fn-grid" id="fn-grid">
+    {% for i in range(9) %}
+      <button id="fn-{{ i }}" onclick="toggleFn({{ address }}, {{ i }})">F{{ i }}</button>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+(function () {
+  const addr = {{ address }};
+  const slider = document.getElementById("speed-slider");
+  const fns = Array(32).fill(false);
+
+  // Debounced htmx-style POST so slider drags don't flood the server.
+  let pending = null;
+  slider.addEventListener("input", () => {
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(() => {
+      const speed = parseFloat(slider.value);
+      fetch(`/throttle/${addr}/state`, {
+        method: "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body: `speed=${speed}`,
+      }).then(r => r.text()).then(html => {
+        document.getElementById("throttle-status").innerHTML = html;
+      });
+    }, 80);
+  });
+
+  window.estop = function (address) {
+    slider.value = 0;
+    fetch(`/throttle/${address}/state`, {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: "speed=-1",  // wire-form sentinel for emergency stop
+    }).then(r => r.text()).then(html => {
+      document.getElementById("throttle-status").innerHTML = html;
+    });
+  };
+
+  window.toggleFn = function (address, index) {
+    fns[index] = !fns[index];
+    const on = fns[index] ? 1 : 0;
+    fetch(`/throttle/${address}/function/${index}`, {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: `on=${on}`,
+    }).then(r => r.text()).then(html => {
+      document.getElementById("throttle-status").innerHTML = html;
+    });
+    document.getElementById(`fn-${index}`).classList.toggle("on", fns[index]);
+  };
+
+  // WebSocket pushes update the status block when *any* client mutates
+  // this throttle — the consist fan-out, another browser tab, the
+  // WiThrottle bridge, or a script. Wired by ``_wire_throttle_manager``
+  // on the server side.
+  if (window.jmriBus) {
+    window.jmriBus.on("throttle", (msg) => {
+      if (msg.data.address !== addr) return;
+      // Slider represents speed magnitude.
+      slider.value = Math.abs(msg.data.speed ?? 0);
+      // Direction highlight — mirror the server's initial-render rule.
+      const fwd = !!msg.data.forward;
+      const fwdBtn = document.getElementById("dir-forward");
+      const revBtn = document.getElementById("dir-reverse");
+      if (fwdBtn) fwdBtn.classList.toggle("ok", fwd);
+      if (revBtn) revBtn.classList.toggle("ok", !fwd);
+    });
+  }
+})();
+</script>
+{% endblock %}

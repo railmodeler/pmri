@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='utf-8' standalone='no'?>
+<locomotive-config>
+  <locomotive id="UP_3601" fileName="UP_3601.xml" roadNumber="3601" roadName="Union Pacific" mfg="Athearn" model="SD45" dccAddress="3601" maxSpeed="0.85">
+    <decoder family="ESU LokSound v5" model="LokSound 5"/>
+    <locoaddress>
+      <dcclocoaddress number="3601" longaddress="yes"/>
+      <protocol>dcc_long</protocol>
+    </locoaddress>
+    <functionlabels>
+      <functionlabel num="0" lockable="true">Headlight</functionlabel>
+      <functionlabel num="1" lockable="true">Bell</functionlabel>
+      <functionlabel num="2" lockable="false">Horn</functionlabel>
+    </functionlabels>
+    <soundlabels>
+      <soundlabel num="1">Prime mover</soundlabel>
+    </soundlabels>
+    <attributepairs>
+      <keyvaluepair>
+        <key>DispatcherZone</key>
+        <value>main</value>
+      </keyvaluepair>
+    </attributepairs>
+  </locomotive>
+  <locomotive id="Demo_Short_1" dccAddress="3">
+    <decoder family="Generic" model="NMRA Standard"/>
+    <locoaddress>
+      <dcclocoaddress number="3" longaddress="no"/>
+      <protocol>dcc_short</protocol>
+    </locoaddress>
+  </locomotive>
+</locomotive-config>
