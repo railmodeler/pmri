@@ -1,0 +1,14 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "jmri-json-systemConnection-client-message",
+    "type": "object",
+    "description": "Schema data object in message from client to JMRI for type \"systemConnection\"",
+    "properties": {
+        "name": {
+            "type": ["string", "null"],
+            "description": "Name of the system connection"
+        }
+    },
+    "additionalProperties": false,
+    "required": ["name"]
+}

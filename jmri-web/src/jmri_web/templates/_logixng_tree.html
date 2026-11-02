@@ -1,0 +1,21 @@
+{# Server-rendered recursive tree view of one LogixNG program.
+
+   Expected context:
+     * name      -- the LogixNG system name (string, URL-safe)
+     * root      -- the LogixNG Node tree (jmri_logixng.LogixNG)
+     * logixng_is_container, logixng_list_slots, logixng_single_slots
+       -- helpers from jmri_logixng.tree_ops, exposed by the view.
+
+   The template renders the root as a nested set of cards -- one per
+   node, indented by depth. Each card shows:
+     * the type_tag + user_name + id (muted)
+     * Edit button -> htmx-swaps in an edit form fragment
+     * Add-child dropdown (for container nodes)
+     * Delete button (non-root)
+     * Nested children rendered via a Jinja include-self recursion.
+#}
+<div id="logixng-tree" style="margin-top:0.5rem">
+  {% with node=root, name=name, depth=0 %}
+    {% include "_logixng_node.html" %}
+  {% endwith %}
+</div>

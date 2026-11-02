@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}FDI — {{ alias }}{% endblock %}
+{% block content %}
+<h2>Function Description — <code class="mono">{{ alias }}</code></h2>
+
+<p>
+  <a href="/openlcb/nodes/{{ alias }}">&larr; back to node</a>
+  &middot;
+  <a href="/openlcb">discovery</a>
+</p>
+
+{% if fetch_error %}
+<div class="card" style="border-color:var(--err,#c33)">
+  <strong style="color:var(--err,#c33)">FDI fetch failed:</strong>
+  <span>{{ fetch_error }}</span>
+  <p class="muted small" style="margin-top:0.5rem">
+    Not every loco publishes FDI. If this node lists Traction in its
+    PIP flags but no FDI, the manufacturer just didn't wire an FDI
+    document into memory space 0xFA — the loco still works, just
+    without labeled function names.
+  </p>
+</div>
+{% else %}
+
+{% if not fdi.flat %}
+<p class="muted">Node published an empty FDI (no functions declared).</p>
+{% endif %}
+
+{% for segment in fdi.segments %}
+<div class="card">
+  {% if segment.name %}<h3>{{ segment.name }}</h3>{% endif %}
+  {% if segment.description %}<p class="muted">{{ segment.description }}</p>{% endif %}
+  {% for group in segment.groups %}
+  <div class="cdi-group" style="border-left:3px solid var(--muted,#888);padding-left:1rem;margin:0.75rem 0">
+    {% if group.name %}<strong>{{ group.name }}</strong>{% endif %}
+    {% if group.description %}
+      <div class="muted small">{{ group.description }}</div>
+    {% endif %}
+    <table class="cv-variables" style="width:100%;margin-top:0.4rem">
+      <thead>
+        <tr>
+          <th style="width:4em">F#</th>
+          <th>Name</th>
+          <th style="width:8em">Kind</th>
+          <th style="width:8em">Behaviour</th>
+          <th>Range</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fn in group.functions %}
+        <tr>
+          <td class="mono">F{{ fn.number }}</td>
+          <td>{{ fn.name or '—' }}</td>
+          <td>{{ fn.kind }}</td>
+          <td>
+            {% if fn.momentary %}<span class="badge">momentary</span>
+            {% else %}latching{% endif %}
+          </td>
+          <td class="mono small">
+            {% if fn.min is not none or fn.max is not none %}
+              {{ fn.min if fn.min is not none else '' }}..{{ fn.max if fn.max is not none else '' }}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,8 @@
+{# Pause / Resume toggle for the frame monitor. Label + title flip
+   based on ``paused``. Re-rendered in place by the toggle endpoint. #}
+<button id="openlcb-pause-btn" type="button"
+        hx-post="/openlcb/monitor/toggle_pause"
+        hx-target="#openlcb-pause-btn" hx-swap="outerHTML"
+        title="{% if paused %}Resume capturing new frames{% else %}Stop appending new frames (existing rows stay){% endif %}">
+  {% if paused %}Resume{% else %}Pause{% endif %}
+</button>

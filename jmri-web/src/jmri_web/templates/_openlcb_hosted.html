@@ -1,0 +1,68 @@
+{# Hosted trains. Add/remove happens via the openlcbCS JSON topic;
+   a CS must already be wired into ctx._openlcb_cs via startup hook. #}
+<div id="openlcb-hosted">
+  {% if hosted_error %}
+  <div class="card" style="border-color:var(--err,#c33);margin-bottom:0.5rem">
+    <strong style="color:var(--err,#c33)">Hosted-train action failed:</strong>
+    <span>{{ hosted_error }}</span>
+  </div>
+  {% endif %}
+  {% if not hosted %}
+  <p class="muted">No hosted trains. Use the form below to add one
+  (requires a <code>CommandStationNode</code> wired into
+  <code>ctx._openlcb_cs</code> in a startup hook — the form 400s
+  with a helpful message otherwise).</p>
+  {% else %}
+  <table class="cv-variables" style="width:100%">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>DCC address</th>
+        <th>Node ID</th>
+        <th>Alias</th>
+        <th>Controller</th>
+        <th>Consist</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for loco in hosted %}
+      <tr>
+        <td>
+          <a href="/openlcb/nodes/{{ loco.alias }}">{{ loco.name }}</a>
+        </td>
+        <td class="mono">
+          {{ loco.address }}
+          {% if loco.long_address %}<span class="badge">long</span>{% endif %}
+        </td>
+        <td class="mono">{{ loco.node_id }}</td>
+        <td class="mono">{{ loco.alias }}</td>
+        <td class="mono small">
+          {% if loco.controller == '00.00.00.00.00.00' %}
+            <span class="muted">unassigned</span>
+          {% else %}
+            {{ loco.controller }}
+          {% endif %}
+        </td>
+        <td>
+          {% if loco.consist_members %}
+            {{ loco.consist_members | length }} member{{ 's' if loco.consist_members | length != 1 }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>
+          <button class="danger"
+                  hx-post="/openlcb/cs/remove"
+                  hx-vals='{"address": {{ loco.address }}, "long_address": {{ 1 if loco.long_address else 0 }}}'
+                  hx-target="#openlcb-hosted" hx-swap="outerHTML"
+                  hx-confirm="Remove hosted train {{ loco.name }}?">
+            Remove
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>

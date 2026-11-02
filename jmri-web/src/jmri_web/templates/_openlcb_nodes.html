@@ -1,0 +1,80 @@
+{# One row per discovered alias. Empty produced/consumed columns are
+   normal — a node hasn't advertised events until we've heard a P/C
+   Identified from it. #}
+<div id="openlcb-nodes">
+  {% if discover_notice %}
+  <div class="card" style="margin-bottom:0.75rem">
+    <span>{{ discover_notice }}</span>
+  </div>
+  {% endif %}
+  {% if not nodes %}
+  <p class="muted">No nodes discovered yet. Click <em>Refresh</em>
+  to broadcast a Verify NID probe.</p>
+  {% else %}
+  <table class="cv-variables" style="width:100%">
+    <thead>
+      <tr>
+        <th>Alias</th>
+        <th>Node ID</th>
+        <th>Identity</th>
+        <th>Protocols</th>
+        <th>Events</th>
+        <th>Last heard</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for n in nodes %}
+      <tr>
+        <td class="mono">
+          <a href="/openlcb/nodes/{{ n.alias }}">{{ n.alias }}</a>
+        </td>
+        <td class="mono">{{ n.node_id or '—' }}</td>
+        <td>
+          {% if n.snip %}
+            <div>
+              <strong>{{ n.snip.user_name or n.snip.model or '—' }}</strong>
+            </div>
+            <div class="muted small">
+              {{ n.snip.manufacturer }}{% if n.snip.model and n.snip.user_name %} · {{ n.snip.model }}{% endif %}
+            </div>
+          {% else %}
+            <span class="muted small">not probed</span>
+          {% endif %}
+        </td>
+        <td class="small">
+          {% if n.pip %}
+            {% for name in n.pip.names %}
+              <span class="badge">{{ name }}</span>
+            {% else %}
+              <span class="muted">(none)</span>
+            {% endfor %}
+          {% else %}
+            <span class="muted">not probed</span>
+          {% endif %}
+        </td>
+        <td class="mono small">
+          {% if n.produced_events or n.consumed_events %}
+            <div>producer × {{ n.produced_events | length }}</div>
+            <div>consumer × {{ n.consumed_events | length }}</div>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td class="small">
+          {% set sec_ago = n.seconds_ago if 'seconds_ago' in n else none %}
+          {% if sec_ago is none %}
+            <span class="muted">—</span>
+          {% elif sec_ago < 60 %}
+            {{ '%.0f' | format(sec_ago) }}s
+          {% elif sec_ago < 3600 %}
+            {{ '%.0f' | format(sec_ago / 60) }}m
+          {% else %}
+            {{ '%.1f' | format(sec_ago / 3600) }}h
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>

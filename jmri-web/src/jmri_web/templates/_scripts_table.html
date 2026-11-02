@@ -1,0 +1,92 @@
+{# Live output tail: while any script is running, htmx polls the
+   refresh endpoint every 2s so print() output from long-running
+   scripts (automatons especially) shows up without the operator
+   clicking Refresh manually. When nothing's running, polling stops
+   automatically because ``hx-trigger`` isn't attached. #}
+{% set any_running = statuses|selectattr('running')|list|length > 0 %}
+{% if run_error %}
+<div class="card" style="border-color: var(--err, #c33); margin-bottom: 0.5rem;">
+  <strong style="color: var(--err, #c33);">Run failed:</strong>
+  <span>{{ run_error }}</span>
+</div>
+{% endif %}
+<table id="scripts-table"
+       {% if any_running %}hx-get="/scripts/refresh"
+       hx-trigger="every 2s"
+       hx-target="#scripts-table"
+       hx-swap="outerHTML"{% endif %}>
+  <thead><tr><th>Name</th><th>Status</th><th>Output</th><th>Error</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for s in statuses %}
+    <tr>
+      <td class="mono">{{ s.name }}
+        {% if s.path %}
+          <span class="badge" title="{{ s.path }}">saved</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if s.error %}<span class="badge err">error</span>
+        {% elif s.finished %}<span class="badge">finished</span>
+        {% elif s.running %}<span class="badge ok">running</span>
+        {% elif s.started_at %}<span class="badge">starting</span>
+        {% else %}<span class="badge muted">on disk</span>{% endif %}
+      </td>
+      <td>
+        {# print() output + anything the script wrote to sys.stderr
+           before crashing. Traceback still shows in the Error column. #}
+        {% if s.stdout or s.stderr %}
+        <details>
+          <summary>output ({{ (s.stdout|length) + (s.stderr|length) }} bytes)</summary>
+          {% if s.stdout %}
+          <pre class="mono" style="font-size:0.85em;margin:0.25rem 0">{{ s.stdout }}</pre>
+          {% endif %}
+          {% if s.stderr %}
+          <div class="muted small">stderr:</div>
+          <pre class="mono" style="font-size:0.85em;color:var(--warn,#c93);margin:0.25rem 0">{{ s.stderr }}</pre>
+          {% endif %}
+        </details>
+        {% else %}
+        <span class="muted small">—</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if s.error %}<details><summary>traceback</summary>
+          <pre class="mono" style="font-size:0.85em">{{ s.error }}</pre>
+        </details>{% endif %}
+      </td>
+      <td>
+        {# Run / Re-run — only for scripts with a file on disk.
+           Re-reads the file every click so the edit → save → run
+           debug loop works. The runner replaces any same-named
+           status entry so the row updates in-place with fresh
+           output. #}
+        {% if s.path %}
+        <button hx-post="/scripts/run-file/{{ s.name }}"
+                hx-target="#scripts-table" hx-swap="outerHTML"
+                title="Re-read {{ s.name }}.py from disk and run it">
+          {% if s.started_at %}Re-run{% else %}Run{% endif %}
+        </button>
+        {% endif %}
+        {% if s.running %}
+        <button class="danger" hx-post="/scripts/stop/{{ s.name }}"
+                hx-target="#scripts-table" hx-swap="outerHTML">Stop</button>
+        {% endif %}
+        {% if s.path %}
+        <button class="danger"
+                hx-post="/scripts/delete/{{ s.name }}"
+                hx-confirm="Delete {{ s.name }}.py from disk?"
+                hx-target="#scripts-table" hx-swap="outerHTML">Delete</button>
+        {% endif %}
+        {# Refresh pulls the latest captured output for long-running
+           scripts (an automaton's ``print()`` in each ``handle()`` tick
+           only appears here after a refresh). #}
+        <button hx-get="/scripts/refresh"
+                hx-target="#scripts-table" hx-swap="outerHTML">Refresh</button>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not statuses %}
+    <tr><td colspan="5" class="muted">No scripts running yet.</td></tr>
+    {% endif %}
+  </tbody>
+</table>

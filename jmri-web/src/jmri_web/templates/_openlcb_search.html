@@ -1,0 +1,27 @@
+{# Traction search result — outside the form so the form doesn't
+   get replaced on submit; the fragment id makes htmx swap only the
+   result block. #}
+<div id="openlcb-search-results" style="margin-top:0.5rem">
+  {% if search_error %}
+  <div class="card" style="border-color:var(--err,#c33)">
+    <strong style="color:var(--err,#c33)">Search failed:</strong>
+    <span>{{ search_error }}</span>
+  </div>
+  {% elif search_results is not none %}
+    {% if not search_results %}
+    <p class="muted">No hosted locos on the bus matched.</p>
+    {% else %}
+    <table class="cv-variables" style="width:100%">
+      <thead><tr><th>Alias</th><th>Node ID</th></tr></thead>
+      <tbody>
+        {% for r in search_results %}
+        <tr>
+          <td class="mono">{{ r.alias }}</td>
+          <td class="mono">{{ r.node_id or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  {% endif %}
+</div>

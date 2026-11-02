@@ -1,0 +1,15 @@
+<div class="card">
+  <h4>CV {{ cv }}</h4>
+  {% if error is defined and error %}
+    <span class="badge err">{{ error }}</span>
+  {% else %}
+    <div class="row">
+      <span class="muted">Value</span>
+      <code class="mono" style="font-size:1.2em">{{ value }}</code>
+      <span class="badge {% if wrote is defined and wrote %}warn{% else %}ok{% endif %}">
+        {{ "wrote" if (wrote is defined and wrote) else "read" }}
+      </span>
+      <span class="muted">mode: <code>{{ mode }}</code></span>
+    </div>
+  {% endif %}
+</div>

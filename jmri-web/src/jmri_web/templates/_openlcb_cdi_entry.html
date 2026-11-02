@@ -1,0 +1,69 @@
+{# One CDI entry — recurses into groups, renders a form row for a leaf.
+   Called with `entry` (a projected group/field dict) and inherits
+   `alias` from the enclosing scope. #}
+
+{% if entry.kind == 'group' %}
+  <div class="cdi-group" style="border-left:3px solid var(--muted,#888);padding-left:1rem;margin:0.75rem 0">
+    <strong>{{ entry.name or 'Group' }}</strong>
+    {% if entry.replication and entry.replication > 1 %}
+      <span class="badge">× {{ entry.replication }}</span>
+    {% endif %}
+    {% if entry.description %}
+      <div class="muted small">{{ entry.description }}</div>
+    {% endif %}
+    {% for child in entry.children %}
+      {% with entry = child %}{% include "_openlcb_cdi_entry.html" %}{% endwith %}
+    {% endfor %}
+  </div>
+{% elif entry.kind == 'field' %}
+  {# Per-field row: label + input + Read/Save. htmx swaps only the
+     status cell so a change to one field doesn't rerender the page. #}
+  <div class="row" style="align-items:center;gap:0.5rem;margin:0.4rem 0">
+    <label style="flex:1">
+      <div>{{ entry.name or entry.type }}</div>
+      {% if entry.description %}
+        <div class="muted small">{{ entry.description }}</div>
+      {% endif %}
+      {% if entry.type == 'bit' %}
+        <input type="checkbox"
+               id="cdi-{{ alias }}-{{ entry.space }}-{{ entry.offset }}-{{ entry.bit }}"
+               name="value" value="1" />
+      {% elif entry.type == 'string' %}
+        <input type="text" name="value"
+               maxlength="{{ entry.size }}"
+               id="cdi-{{ alias }}-{{ entry.space }}-{{ entry.offset }}"
+               placeholder="{{ entry.default or '' }}" />
+      {% elif entry.type == 'int' %}
+        <input type="number" name="value"
+               id="cdi-{{ alias }}-{{ entry.space }}-{{ entry.offset }}"
+               {% if entry.min is not none %}min="{{ entry.min }}"{% endif %}
+               {% if entry.max is not none %}max="{{ entry.max }}"{% endif %}
+               placeholder="{{ entry.default if entry.default is not none else '' }}" />
+      {% elif entry.type == 'float' %}
+        <input type="number" step="any" name="value"
+               id="cdi-{{ alias }}-{{ entry.space }}-{{ entry.offset }}" />
+      {% elif entry.type == 'eventid' %}
+        <input type="text" name="value"
+               id="cdi-{{ alias }}-{{ entry.space }}-{{ entry.offset }}"
+               placeholder="XX.XX.XX.XX.XX.XX.XX.XX"
+               pattern="[0-9A-Fa-f. ]+" />
+      {% else %}
+        <input type="text" name="value" disabled
+               value="(unsupported type: {{ entry.type }})" />
+      {% endif %}
+    </label>
+    {% set cell_id = 'cdi-status-' ~ alias ~ '-' ~ entry.space ~ '-' ~ entry.offset ~ '-' ~ (entry.bit or 0) %}
+    <button hx-get="/openlcb/nodes/{{ alias }}/cdi/read"
+            hx-vals='{"space": {{ entry.space }}, "offset": {{ entry.offset }}, "size": {{ entry.size }}, "type": "{{ entry.type }}", "bit": {{ entry.bit or 0 }}}'
+            hx-target="#{{ cell_id }}" hx-swap="innerHTML">
+      Read
+    </button>
+    <button hx-post="/openlcb/nodes/{{ alias }}/cdi/write"
+            hx-include="closest label"
+            hx-vals='{"space": {{ entry.space }}, "offset": {{ entry.offset }}, "size": {{ entry.size }}, "type": "{{ entry.type }}", "bit": {{ entry.bit or 0 }}}'
+            hx-target="#{{ cell_id }}" hx-swap="innerHTML">
+      Save
+    </button>
+    <span id="{{ cell_id }}" class="muted small">&nbsp;</span>
+  </div>
+{% endif %}

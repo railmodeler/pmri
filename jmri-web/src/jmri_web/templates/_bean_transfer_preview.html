@@ -1,0 +1,43 @@
+{# Preview fragment for the cross-profile bean transfer widget.
+   Renders per-kind counts + how many rows would be overwritten in
+   the target. Wraps an "Apply" form so the user commits explicitly
+   — nothing writes to disk on Preview. #}
+{% if error %}
+<div class="card" style="border-color:var(--err,#c33)">
+  <strong style="color:var(--err,#c33)">Preview failed:</strong>
+  <span>{{ error }}</span>
+</div>
+{% else %}
+<div class="card">
+  <p class="muted">
+    From <strong>{{ from_name }}</strong>
+    → to <strong>{{ to_name }}{% if to_is_active %} (active){% endif %}</strong>
+  </p>
+  <table>
+    <thead><tr><th>Type</th><th>Rows in source</th><th>Would overwrite in target</th></tr></thead>
+    <tbody>
+      {% for kind in types %}
+      <tr>
+        <td>{{ kind }}</td>
+        <td>{{ counts.get(kind, 0) }}</td>
+        <td>{{ will_overwrite.get(kind, 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form hx-post="/profiles/transfer/apply"
+        hx-target="#bean-transfer-result"
+        hx-swap="innerHTML" hx-confirm="Copy beans into {{ to_name }}?"
+        style="margin-top:0.5rem">
+    <input type="hidden" name="from_id" value="{{ from_id }}" />
+    <input type="hidden" name="to_id" value="{{ to_id }}" />
+    {% for kind in types %}
+    <input type="hidden" name="types" value="{{ kind }}" />
+    {% endfor %}
+    <button type="submit">Apply</button>
+    <span class="muted small">
+      {% if to_is_active %}Target is active — live bean managers refresh after apply.{% endif %}
+    </span>
+  </form>
+</div>
+{% endif %}

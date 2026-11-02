@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Panel viewer{% endblock %}
+{% block content %}
+<h2>Panel viewer</h2>
+
+{% if profile_panels %}
+<div class="card">
+  <h3>Panels in active profile</h3>
+  <ul>
+    {% for p in profile_panels %}
+    <li>
+      {# ``p.name`` is ``<Type>/<stem>`` per the panel service; the
+         SVG route takes the stem alone. #}
+      <a href="/panels/{{ p.userName }}"><code class="mono">{{ p.userName }}</code></a>
+      <span class="muted small">({{ p.type }})</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>Upload + render</h3>
+  <p class="muted small">Upload any JMRI panel XML (<code>layout-config</code>)
+    to render a preview without touching the profile. The renderer draws
+    sensors, turnouts (icon + layout geometry), signals, memory, text
+    labels, track segments, and anchor points. Unknown element types
+    are counted but skipped so a real-world panel still renders what
+    we recognise.</p>
+
+  <form hx-post="/panel/upload" hx-target="#panel-summary" hx-swap="innerHTML"
+        hx-encoding="multipart/form-data" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".xml" required />
+    <button type="submit">Upload + render</button>
+  </form>
+</div>
+
+<div id="panel-summary">
+  {% include "_panel_summary.html" %}
+</div>
+{% endblock %}
