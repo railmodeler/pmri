@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}LogixNG {{ program.name }}{% endblock %}
+{% block content %}
+<h2>
+  LogixNG <code class="mono">{{ program.name }}</code>
+  {% if program.userName %}<span class="muted">-- {{ program.userName }}</span>{% endif %}
+</h2>
+<p><a href="/logixng">&larr; Back to programs</a></p>
+
+<div class="card">
+  <div class="row" style="align-items:baseline">
+    <strong>Enabled:</strong>
+    {% if program.enabled %}
+    <span class="badge ok">yes</span>
+    {% else %}
+    <span class="badge">no</span>
+    {% endif %}
+    <span class="muted">{{ program.conditionals|length }} conditional{% if program.conditionals|length != 1 %}s{% endif %}</span>
+    <span style="margin-left:auto"></span>
+    {% if program.enabled %}
+    <button hx-post="/logixng/{{ program.name }}/disable"
+            hx-target="body" hx-swap="none"
+            hx-on::after-request="window.location.reload()">Disable</button>
+    {% else %}
+    <button class="ok" hx-post="/logixng/{{ program.name }}/enable"
+            hx-target="body" hx-swap="none"
+            hx-on::after-request="window.location.reload()">Enable</button>
+    {% endif %}
+    <button hx-post="/logixng/{{ program.name }}/run"
+            hx-target="body" hx-swap="none"
+            hx-on::after-request="window.location.reload()"
+            {% if not program.enabled %}disabled title="enable first"{% endif %}
+            >Run all</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Tree editor</h3>
+  <p class="muted small">
+    Visual tree view. Each node has <strong>Edit</strong> (change
+    leaf fields), <strong>Add child</strong> (append under a
+    container's slot), and <strong>Delete</strong> (except on root
+    and on required single slots like <code>condition</code> /
+    <code>then_action</code>). Changes save to disk and emit the
+    normal <code>logixng.updated</code> signal. For bulk / power
+    edits, use the YAML editor below.
+  </p>
+  {% include "_logixng_tree.html" %}
+</div>
+
+<div class="card">
+  <h3>YAML editor</h3>
+  <p class="muted small">
+    The full program tree. Edit here and click <strong>Save</strong> to
+    replace it. Syntax reference:
+    <a href="/logixng/types">available action + expression types</a>.
+    Invalid YAML or an unknown <code>type</code> tag is refused with an
+    error and the current tree is preserved.
+  </p>
+  <form id="logixng-yaml-form"
+        hx-post="/logixng/{{ program.name }}/save-yaml"
+        hx-target="#logixng-yaml-result"
+        hx-swap="innerHTML">
+    <textarea name="yaml" rows="24" spellcheck="false"
+              style="width:100%;font-family:monospace;font-size:0.85rem"
+    >{{ yaml_text }}</textarea>
+    <div class="row" style="margin-top:0.5rem;align-items:center">
+      <button type="submit">Save</button>
+      <span id="logixng-yaml-result" class="muted small"
+            style="margin-left:0.5rem"></span>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

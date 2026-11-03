@@ -1,0 +1,552 @@
+/* jmri-web — minimal modern stylesheet (no framework). */
+
+:root {
+    --bg: #1a1d23;
+    --surface: #242830;
+    --surface-hi: #2d323c;
+    --border: #3a4150;
+    --text: #e8eaee;
+    --muted: #8b919e;
+    --accent: #4fc3f7;
+    --accent-dim: #2a6478;
+    --ok: #66bb6a;
+    --warn: #ffa726;
+    --err: #ef5350;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    /* Wrap when the row runs out of space. row-gap gives breathing
+       room between the wrapped rows so the header doesn't look
+       collapsed vertically. */
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+}
+
+header h1 {
+    font-size: 1.1rem;
+    margin: 0;
+    color: var(--accent);
+}
+
+/* Nav wraps its own links too — otherwise a narrow window hides
+   the trailing tabs off-screen behind the right-side cluster. */
+header nav { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+header nav a {
+    color: var(--text);
+    text-decoration: none;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+}
+header nav a:hover { background: var(--surface-hi); }
+header nav a.active { background: var(--accent-dim); color: var(--accent); }
+
+/* Right-side cluster (railroad · version · user badge · logout).
+   Wrapped in one flex container so ``margin-left: auto`` moves the
+   whole group together — otherwise a wrapping header shows the
+   items scattered across the wrapped rows. */
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+    flex-wrap: wrap;
+    /* Right-justify the cluster's items so the JMRI version
+       stays rightmost even when items wrap to a second line. */
+    justify-content: flex-end;
+}
+
+main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem; }
+h2 { margin-top: 0; font-weight: 500; color: var(--accent); }
+
+button, .button {
+    background: var(--accent-dim);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.4rem 0.9rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+}
+button:hover, .button:hover { background: var(--accent); color: #000; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+button.danger { background: #5a2828; }
+button.danger:hover { background: var(--err); }
+button.ok { background: #2a5a2a; }
+button.ok:hover { background: var(--ok); }
+
+input[type="text"], input[type="number"], select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+}
+input[type="range"] { width: 100%; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 500; font-size: 0.85em; text-transform: uppercase; }
+tr:hover td { background: var(--surface-hi); }
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+.col { flex: 1 1 200px; }
+
+/* Consistent stacked layout for the Browse-and-pick picker — heading
+   above dropdown, evenly-sized columns so Manufacturer / Family /
+   Model line up regardless of option-string length. */
+.browse-picker { align-items: flex-start; }
+.browse-picker .col { min-width: 12em; }
+.browse-picker select { width: 100%; box-sizing: border-box; }
+.pick-label {
+    font-weight: 500;
+    color: var(--muted, #8b919e);
+    font-size: 0.85em;
+    margin-bottom: 0.25rem;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.85em;
+    background: var(--surface-hi);
+}
+.badge.ok { background: #2a5a2a; color: var(--ok); }
+.badge.warn { background: #5a4a28; color: var(--warn); }
+.badge.err { background: #5a2828; color: var(--err); }
+.badge.small { font-size: 0.7em; padding: 0.05rem 0.35rem; }
+
+/* Interactive Python REPL console area on /scripts. Scrollable
+   fixed-height box so a long history doesn't push the input box
+   off-screen; monospace throughout because it's all code. Each
+   entry has a subtle top border to visually separate submissions. */
+.repl-console {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem;
+    max-height: 22rem;
+    overflow-y: auto;
+    font-size: 0.9em;
+}
+.repl-entry {
+    padding: 0.3rem 0;
+    border-top: 1px dashed var(--border);
+}
+.repl-entry:first-child { border-top: none; }
+.repl-source { display: flex; gap: 0.4rem; align-items: baseline; }
+.repl-prompt { color: var(--accent); font-family: var(--mono); }
+.repl-source pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.repl-stdout { margin: 0.2rem 0 0 1.4rem; white-space: pre-wrap; }
+.repl-stderr { margin: 0.2rem 0 0 1.4rem; color: var(--warn); white-space: pre-wrap; }
+.repl-error { margin: 0.2rem 0 0 1.4rem; color: var(--err); white-space: pre-wrap; }
+
+/* Intro line above the topic-help accordion — kept at normal body
+   size (was .small at 0.8em, too tight against the .muted colour).
+   The doc-link is amber not blue: the default browser blue is hard
+   to read against the dark surface, and we already use ``--warn``
+   as the accent colour for "notice / read this" text. */
+.topic-help-intro { font-size: 1em; margin-bottom: 0.6rem; }
+.doc-link { color: var(--warn); text-decoration: underline; }
+.doc-link:hover { color: #ffcc80; }
+
+/* Topic-help accordion on the home tab. Each topic is a
+   ``<details>`` disclosure widget: the summary shows the badge +
+   the first sentence of the help entry; expanding shows the full
+   panel with method table + examples. Nested ``<details>`` for the
+   per-method examples so the panel stays scannable when open. */
+.topics-accordion { display: flex; flex-direction: column; gap: 0.25rem; }
+.topic-help { border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.75rem; }
+.topic-help[open] { background: var(--surface-hi); }
+.topic-help > summary { cursor: pointer; display: flex; align-items: baseline; gap: 0.5rem; }
+.topic-help > summary::-webkit-details-marker { display: none; }
+.topic-help > summary::marker { display: none; }
+.topic-help > summary::before { content: "▸"; color: var(--muted); font-size: 0.85em; }
+.topic-help[open] > summary::before { content: "▾"; }
+.topic-help-body { padding: 0.5rem 0 0.25rem 1.2rem; }
+.topic-help-body p { margin: 0.4rem 0; }
+.topic-help-methods { margin-top: 0.5rem; }
+.topic-help-methods th, .topic-help-methods td { padding: 0.3rem 0.5rem; font-size: 0.9em; }
+.topic-help-example { margin-top: 0.3rem; }
+.topic-help-example > summary { cursor: pointer; }
+.topic-help-example pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.5rem;
+    margin: 0.2rem 0;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+code, .mono { font-family: var(--mono); }
+.muted { color: var(--muted); }
+
+.fn-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; max-width: 400px; }
+.fn-grid button { padding: 0.6rem; min-width: 0; }
+.fn-grid button.on { background: var(--accent); color: #000; }
+
+.speed-display {
+    font-family: var(--mono);
+    font-size: 2em;
+    text-align: center;
+    margin: 0.5rem 0;
+}
+
+/* ----- programmer / pane tabs ----- */
+.programmer-page main { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+.programmer-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+.return-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+.pane-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin: 1rem 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.1rem;
+}
+.pane-tab {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-bottom: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+.pane-tab:hover { color: var(--text); background: var(--surface-hi); }
+.pane-tab.active {
+    color: var(--text);
+    background: var(--surface);
+    border-color: var(--border);
+    border-bottom: 1px solid var(--surface);
+    margin-bottom: -1px;
+    font-weight: 500;
+}
+.pane-content { min-height: 300px; }
+table.cv-variables { width: 100%; border-collapse: collapse; }
+table.cv-variables th, table.cv-variables td {
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+}
+.small { font-size: 0.8em; }
+.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.roster-entry-fields th { text-align: right; padding-right: 1rem; color: var(--muted); font-weight: normal; }
+.roster-entry-fields td { padding: 0.2rem 0; }
+
+/* ----- catalog-load thermometer ----- */
+.thermometer {
+    width: 100%;
+    height: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 0.5rem 0;
+}
+.thermometer-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.4s ease-out;
+}
+
+/* ----- programmer batch write / dirty tracking ----- */
+.programmer-pane .pane-header {
+    margin-bottom: 0.5rem;
+}
+.programmer-pane .dirty-count {
+    margin-right: 0.5rem;
+}
+.programmer-pane .batch-progress {
+    margin: 0.5rem 0;
+}
+.programmer-pane tr.dirty td,
+.programmer-pane tr.raw-cv-dirty td,
+.programmer-pane .pane-widget.dirty {
+    background: rgba(255, 215, 0, 0.10);
+}
+.programmer-pane tr.dirty .cv-value-input,
+.programmer-pane tr.raw-cv-dirty .raw-cv-value-input,
+.programmer-pane .pane-widget.dirty .cv-value-input {
+    border-color: goldenrod;
+    box-shadow: 0 0 0 1px goldenrod inset;
+}
+
+/* ----- rich pane layout (column/row/label/separator/widget) -----
+   Column alignment must be consistent across the whole pane so the
+   ``stored / input / Read / Write`` cluster forms a straight column
+   down the right side regardless of how JMRI's XML nested things.
+   To get that, we render every widget as a full-width row directly
+   under the pane root — ``<column>``/``<row>``/``<group>``
+   containers become ``display: contents`` so their kids participate
+   in the pane's flat flex stack. Labels and separators still appear
+   at their authored positions between widgets. */
+.pane-layout {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.pane-col,
+.pane-row,
+.pane-group {
+    display: contents;
+}
+.pane-label {
+    font-weight: 600;
+    margin-top: 0.5rem;
+    margin-bottom: 0.1rem;
+}
+.pane-separator {
+    border: none;
+    border-top: 1px solid var(--border, #444);
+    margin: 0.35rem 0;
+}
+.pane-widget {
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+.pane-widget-line {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: nowrap;
+}
+.pane-widget-info {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    min-width: 0;   /* let the flex parent shrink this side */
+}
+.pane-widget-label {
+    font-weight: 500;
+}
+.pane-widget-cv {
+    color: var(--muted, #888);
+    white-space: nowrap;
+}
+/* Right cluster — fixed layout so stored / input / buttons align
+   in a straight column across all rows in a pane. Grid instead of
+   flex so each sub-column has a stable width. */
+.pane-widget-actions {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 7em 9em auto auto;
+    align-items: center;
+    gap: 0.5rem;
+    justify-items: end;
+}
+.pane-widget-stored {
+    color: var(--muted, #888);
+    white-space: nowrap;
+    justify-self: end;
+}
+.pane-widget-input {
+    justify-self: end;
+    width: 100%;
+}
+.pane-widget-input select,
+.pane-widget-input input {
+    width: 100%;
+    box-sizing: border-box;
+}
+.pane-widget-btns {
+    display: flex;
+    gap: 0.35rem;
+    grid-column: 3;
+}
+.pane-widget-btns button,
+.row-btn-placeholder {
+    min-width: 4em;
+}
+.row-btn-placeholder {
+    display: inline-block;
+}
+.row-read-status {
+    grid-column: 4;
+    min-width: 6em;
+}
+.pane-widget-tooltip {
+    line-height: 1.3;
+    margin-top: 0.15rem;
+}
+/* On narrower screens the actions cluster stops trying to be a rigid
+   4-column grid and falls back to a flex row that wraps. */
+@media (max-width: 900px) {
+    .pane-widget-line {
+        flex-wrap: wrap;
+    }
+    .pane-widget-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-left: auto;
+    }
+}
+.raw-cv-status.ok  { color: var(--ok, seagreen); }
+.raw-cv-status.err { color: var(--err, crimson); }
+.pane-write-btn:disabled,
+.pane-cancel-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.row-read-status.ok  { color: var(--ok, seagreen); }
+.row-read-status.err { color: var(--err, crimson); }
+
+/* ----- <grid> / <griditem> layout (JMRI GridBagLayout emulation) -----
+   Used by decoder-declared panes (SoundTraxx Extended Function Map,
+   etc.). Each cell is placed by explicit grid-column/grid-row
+   coordinates emitted by the template. Anchor classes map Swing's
+   ``LINE_END`` / ``CENTER`` constants to CSS justification. */
+.grid-container {
+    display: grid;
+    grid-auto-rows: min-content;
+    gap: 0.3rem 0.6rem;
+    padding: 0.5rem 0;
+    align-items: center;
+}
+.grid-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.grid-cell.gc-end    { justify-content: flex-end;    text-align: right; }
+.grid-cell.gc-start  { justify-content: flex-start;  text-align: left; }
+.grid-cell.gc-center { justify-content: center;      text-align: center; }
+.grid-label {
+    color: var(--muted, #aaa);
+    font-weight: 500;
+    white-space: nowrap;
+}
+.grid-widget {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.grid-widget.dirty {
+    background: rgba(255, 215, 0, 0.20);
+    border-radius: 2px;
+    padding: 0 0.2rem;
+}
+.grid-widget-label {
+    white-space: nowrap;
+}
+
+/* ----- Function Map matrix (<fnmapping/>) ----- */
+.fnmap-wrapper {
+    overflow-x: auto;
+    margin: 0.5rem 0;
+}
+.fnmap {
+    border-collapse: collapse;
+    font-size: 0.85em;
+}
+.fnmap th, .fnmap td {
+    border: 1px solid var(--border, #444);
+    padding: 0.2rem 0.4rem;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.fnmap thead th {
+    background: var(--surface-hi, #2d323c);
+    font-weight: 600;
+    color: var(--muted, #aaa);
+    text-transform: none;
+    font-size: 0.9em;
+}
+.fnmap-caption {
+    font-weight: 600;
+    color: var(--accent, #4fc3f7);
+    letter-spacing: 0.03em;
+    background: var(--surface, #242830) !important;
+    padding: 0.4rem 0.5rem !important;
+}
+.fnmap-header-num th {
+    color: var(--text);
+    font-family: var(--mono);
+    font-weight: 500;
+}
+.fnmap-header-label th {
+    color: var(--muted, #aaa);
+    font-weight: 400;
+    font-size: 0.85em;
+    padding: 0.15rem 0.3rem;
+    min-width: 3.5em;
+    max-width: 6em;
+    white-space: normal;
+    line-height: 1.15;
+}
+.fnmap-hlabel-line {
+    display: block;
+    line-height: 1.15;
+}
+.fnmap tbody th {
+    background: var(--surface, #242830);
+    text-align: right;
+    font-family: var(--mono);
+    color: var(--text);
+    font-weight: 500;
+}
+.fnmap tbody tr:hover th,
+.fnmap tbody tr:hover td { background: var(--surface-hi, #2d323c); }
+.fnmap-cell.dirty {
+    background: rgba(255, 215, 0, 0.20);
+    border-radius: 2px;
+}
+.fnmap-check {
+    cursor: pointer;
+    margin: 0;
+}

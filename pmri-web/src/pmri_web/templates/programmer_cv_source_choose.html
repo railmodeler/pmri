@@ -1,0 +1,9 @@
+{% extends "programmer_base.html" %}
+{% block title %}Choose CV source · {{ loco.id }}{% endblock %}
+{% block content %}
+<h2>Programmer · {{ loco.id }}
+  <span class="muted">{{ loco.roadName }} {{ loco.roadNumber }}</span>
+</h2>
+
+{% include "_programmer_cv_source_chooser.html" %}
+{% endblock %}

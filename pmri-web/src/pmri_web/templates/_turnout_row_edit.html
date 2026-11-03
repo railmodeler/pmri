@@ -1,0 +1,33 @@
+{# HTML5 does not allow <form> as a direct child of <tr>; the parser
+   hoists it out and orphans the <td>s, which is why an earlier
+   <form>-wrapped version left Save silently doing nothing. We wire
+   htmx directly on the Save button and gather inputs via hx-include
+   scoped to this row. Enter-key in a text input submits too. #}
+{% set _t = t %}
+<tr data-turnout="{{ _t.name }}" class="turnout-edit-row">
+  <td class="mono">{{ _t.name }}</td>
+  <td>
+    <input type="text" name="userName" value="{{ _t.userName or '' }}"
+           placeholder="User name"
+           hx-post="/turnouts/{{ _t.name }}/update"
+           hx-trigger="keydown[key=='Enter']"
+           hx-include="closest tr"
+           hx-target="closest tr" hx-swap="outerHTML" />
+  </td>
+  <td>
+    <label style="display:flex;align-items:center;gap:0.25rem">
+      <input type="checkbox" name="inverted" value="1"
+             {% if _t.inverted %}checked{% endif %} />
+      Inverted
+    </label>
+  </td>
+  <td>
+    <button type="button"
+            hx-post="/turnouts/{{ _t.name }}/update"
+            hx-include="closest tr"
+            hx-target="closest tr" hx-swap="outerHTML">Save</button>
+    <button type="button"
+            hx-get="/turnouts/{{ _t.name }}/row"
+            hx-target="closest tr" hx-swap="outerHTML">Cancel</button>
+  </td>
+</tr>

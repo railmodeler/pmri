@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling>=1.20"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pmri-web"
+version = "0.1.0"
+description = "Web UI for the JMRI Python rewrite (Stage 5)."
+requires-python = ">=3.12"
+license = "GPL-2.0-or-later"
+dependencies = [
+    "pmri-core==0.1.0",
+    "pmri-server==0.1.0",
+    "pmri-decoderpro==0.1.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",   # form parsing for panel-upload
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "pytest-cov>=5.0,<7.0",
+    "httpx>=0.27,<1.0",
+    "mypy>=1.10,<2.0",
+    "ruff>=0.5,<1.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pmri_web"]
+# Include the templates + static assets in the wheel.
+artifacts = ["src/pmri_web/templates/**", "src/pmri_web/static/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+asyncio_mode = "auto"
+markers = [
+    "hardware: requires physical DCC hardware; skipped by default (pass --run-hardware to include)",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["jinja2.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RET", "PL", "PERF"]
+ignore = ["PLR0913", "PLR2004", "PLR0911", "PLR0912", "PLR0915"]
+
+[tool.coverage.run]
+source = ["pmri_web"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]

@@ -1,0 +1,31 @@
+{# See _turnout_row_edit.html for why <form> is not wrapped around the
+   row: HTML5 forbids <form> as a direct child of <tr>. Wire htmx on
+   the inputs/buttons and gather fields via hx-include. #}
+{% set _s = s %}
+<tr data-sensor="{{ _s.name }}" class="sensor-edit-row">
+  <td class="mono">{{ _s.name }}</td>
+  <td>
+    <input type="text" name="userName" value="{{ _s.userName or '' }}"
+           placeholder="User name"
+           hx-post="/sensors/{{ _s.name }}/update"
+           hx-trigger="keydown[key=='Enter']"
+           hx-include="closest tr"
+           hx-target="closest tr" hx-swap="outerHTML" />
+  </td>
+  <td>
+    <label style="display:flex;align-items:center;gap:0.25rem">
+      <input type="checkbox" name="inverted" value="1"
+             {% if _s.inverted %}checked{% endif %} />
+      Inverted
+    </label>
+  </td>
+  <td>
+    <button type="button"
+            hx-post="/sensors/{{ _s.name }}/update"
+            hx-include="closest tr"
+            hx-target="closest tr" hx-swap="outerHTML">Save</button>
+    <button type="button"
+            hx-get="/sensors/{{ _s.name }}/row"
+            hx-target="closest tr" hx-swap="outerHTML">Cancel</button>
+  </td>
+</tr>

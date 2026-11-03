@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.20"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pmri-withrottle"
+version = "0.1.0"
+description = "WiThrottle TCP server â€” Engine Driver / WiThrottle iOS compatibility for pmri-server"
+requires-python = ">=3.12"
+dependencies = [
+    "pmri-core==0.1.0",
+    "pmri-server==0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.23,<1.0",
+    "ruff>=0.5,<1.0",
+    "mypy>=1.10,<2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pmri_withrottle"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "hardware: requires physical DCC hardware; skipped by default (pass --run-hardware to include)",
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+strict = true
+python_version = "3.12"

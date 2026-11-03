@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Log in — JMRI{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 420px; margin: 3rem auto;">
+  <h2>Sign in</h2>
+  <p class="muted">Access is restricted. Log in with your JMRI username
+     and password. First-run credentials for the ``admin`` user are in
+     <code class="mono">&lt;settings-root&gt;/admin_password.txt</code>
+     (mode 0600) on the server.</p>
+
+  {% if error %}
+    <div class="card" style="border-color: var(--err, #c33)">
+      <strong style="color: var(--err, #c33)">{{ error }}</strong>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/login">
+    {# next= query param preserved so the caller lands back on the
+       page they came from after a successful login. #}
+    <input type="hidden" name="next" value="{{ next or '/' }}" />
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+
+    <label style="display: block;">Username
+      <input type="text" name="username" required autofocus autocomplete="username"
+             style="display: block; width: 100%; box-sizing: border-box;" />
+    </label>
+
+    <label style="display: block; margin-top: 0.75rem;">Password
+      <input type="password" name="password" required autocomplete="current-password"
+             style="display: block; width: 100%; box-sizing: border-box;" />
+    </label>
+
+    <button type="submit" style="margin-top: 1rem; width: 100%;">Sign in</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{# Console fragment — renders the entire history + optional
+   pending-continuation marker. Swapped in place by htmx on every
+   submission so scrollback grows without a full-page reload. #}
+<div id="repl-console" class="repl-console">
+  {% if not history %}
+    <div class="muted small">interpreter idle — submit an expression to start</div>
+  {% endif %}
+  {% for entry in history %}
+    <div class="repl-entry">
+      <div class="repl-source">
+        <span class="repl-prompt">&gt;&gt;&gt;</span>
+        <pre class="mono">{{ entry.source }}</pre>
+      </div>
+      {% if entry.stdout %}
+        <pre class="mono repl-stdout">{{ entry.stdout }}</pre>
+      {% endif %}
+      {% if entry.stderr %}
+        <pre class="mono repl-stderr">{{ entry.stderr }}</pre>
+      {% endif %}
+      {% if entry.error %}
+        <pre class="mono repl-error">{{ entry.error }}</pre>
+      {% endif %}
+    </div>
+  {% endfor %}
+  {% if pending_continuation %}
+    <div class="repl-entry repl-pending">
+      <div class="muted small">
+        ... waiting for continuation. Complete the statement and submit again.
+      </div>
+      <pre class="mono">{{ pending_continuation }}</pre>
+    </div>
+  {% endif %}
+</div>

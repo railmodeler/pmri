@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling>=1.20"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pmri-loconet"
+version = "0.1.0"
+description = "LocoNet driver for the JMRI Python rewrite (Stage 4)."
+requires-python = ">=3.12"
+license = "GPL-2.0-or-later"
+dependencies = [
+    "pmri-core==0.1.0",
+    "pyserial-asyncio>=0.6",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "pytest-cov>=5.0,<7.0",
+    "mypy>=1.10,<2.0",
+    "ruff>=0.5,<1.0",
+]
+
+# This is the entry point that lets pmri_core.plugins.load_connections()
+# discover our driver. Installing this package side-by-side with pmri-core
+# is all it takes for the LocoNet system prefix "L" to become available.
+[project.entry-points."pmri.connection"]
+loconet = "pmri_loconet:LocoNetConnection"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pmri_loconet"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+asyncio_mode = "auto"
+markers = [
+    "hardware: requires physical DCC hardware; skipped by default (pass --run-hardware to include)",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["serial_asyncio.*", "serial.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RET", "PL", "PERF"]
+ignore = [
+    "PLR0913",   # too-many-args: bean constructors and message encoders take many args
+    "PLR2004",   # magic values: opcode constants are intentionally inline
+    "PLR0911",   # too-many-returns: encode/decode dispatch is a flat match
+    "PLR0912",   # too-many-branches: same
+]
+
+[tool.coverage.run]
+source = ["pmri_loconet"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]

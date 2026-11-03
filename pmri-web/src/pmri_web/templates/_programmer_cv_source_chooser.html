@@ -1,0 +1,31 @@
+{# Shown when a loco has CV state in BOTH the JMRI-canonical location
+   (<profile>/roster/<id>.xml <values> block) AND our proprietary
+   location (<profile>/rosters/<id>.xml). Asks the user which is
+   authoritative before proceeding to the tabbed programmer view. #}
+<div class="card cv-source-chooser">
+  <h3>Two CV state files found</h3>
+  <p>
+    This locomotive's decoder CV state is stored in <strong>both</strong> of
+    these locations, and they don't agree. Pick the one the tabbed
+    programmer should use:
+  </p>
+  <div class="row">
+    <form method="post"
+          action="/programmer/loco/{{ loco_id }}/resolve-source">
+      <input type="hidden" name="source" value="roster" />
+      <button type="submit" class="ok">Use JMRI-canonical</button>
+      <p class="muted small mono">{{ roster_path }}</p>
+    </form>
+    <form method="post"
+          action="/programmer/loco/{{ loco_id }}/resolve-source">
+      <input type="hidden" name="source" value="legacy" />
+      <button type="submit">Use legacy</button>
+      <p class="muted small mono">{{ legacy_path }}</p>
+    </form>
+  </div>
+  <p class="muted small" style="margin-top:1rem">
+    Your choice is remembered for this session. Writes go to the legacy
+    location today; a future update will keep the JMRI-canonical
+    <code>&lt;values&gt;</code> block in sync as well.
+  </p>
+</div>

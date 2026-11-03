@@ -1,0 +1,19 @@
+{# Catalog-load progress fragment. HTMX polls itself every 500 ms via
+   hx-trigger="load delay:500ms" until the poll endpoint returns the
+   final catalog fragment (done + swap element goes away). #}
+<div id="catalog-status"
+     hx-get="/programmer/catalog/progress"
+     hx-trigger="load delay:500ms"
+     hx-target="#programmer-catalog"
+     hx-swap="innerHTML">
+  <div class="badge warn">Loading catalog…</div>
+  {% set pct = ((loaded or 0) * 100 // total) if total else 0 %}
+  <div class="thermometer" role="progressbar"
+       aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100">
+    <div class="thermometer-fill" style="width: {{ pct }}%"></div>
+  </div>
+  <p class="muted small">
+    {{ loaded or 0 }} / {{ total }} XML files scanned
+    {% if directory %}from <code>{{ directory }}</code>{% endif %}
+  </p>
+</div>

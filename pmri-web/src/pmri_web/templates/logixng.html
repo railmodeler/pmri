@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}LogixNG{% endblock %}
+{% block content %}
+<h2>LogixNG</h2>
+<p class="muted small">
+  <a href="/logixng/types">Type catalog</a> -- browse every registered
+  action + expression type available in this build.
+</p>
+
+<div class="card">
+  <h3>Create a program</h3>
+  {# A LogixNG is a named collection of ConditionalNGs; the JSON tree
+     for actions/expressions is normally uploaded by scripts or by a
+     future visual editor. This form creates an empty program that
+     you'd populate through the JSON API. #}
+  <form hx-post="/logixng/create" hx-target="#logixng-list"
+        hx-swap="outerHTML" class="row">
+    <label>System name
+      <input type="text" name="name" required pattern="[A-Za-z0-9_.-]+"
+             placeholder="IQ1" />
+    </label>
+    <label style="flex:1">User name
+      <input type="text" name="userName" placeholder="optional" />
+    </label>
+    <button type="submit">Create</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Import from JMRI Java XML</h3>
+  <p class="muted small">Upload a JMRI Java panel or LogixNG XML file
+     (typically a <code>PanelPro.xml</code> or a dedicated LogixNG
+     export). Every <code>&lt;LogixNG&gt;</code> program in the file
+     is converted to our tree format and added to the Programs list
+     below. Unsupported action / expression types are replaced with
+     LogAction placeholders and listed as warnings.</p>
+  <form hx-post="/logixng/import-xml" hx-target="#import-result"
+        hx-encoding="multipart/form-data" hx-swap="innerHTML">
+    <input type="file" name="file" accept=".xml,text/xml" required />
+    <button type="submit" style="margin-left: 0.5rem;">Import</button>
+  </form>
+  <div id="import-result" style="margin-top: 0.75rem;"></div>
+</div>
+
+<div class="card">
+  <h3>Programs</h3>
+  {% include "_logixng_list.html" %}
+</div>
+
+{# Live push: the LogixNG manager fires added/updated/removed. There's
+   no PushManager wiring for logixng yet, so we skip the WebSocket
+   refresh — clicking a button already re-fetches the list. Add a
+   subscription later once ``_wire_logixng_manager`` lands in
+   PushManager. #}
+{% endblock %}
