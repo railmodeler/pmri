@@ -1,4 +1,4 @@
-name: Upload Python Package to PyPI when a Release is Created
+name: Upload Python Packages to PyPI when a Release is Created
 
 on:
   release:
@@ -6,25 +6,52 @@ on:
 
 jobs:
   pypi-publish:
-    name: Publish release to PyPI
+    name: Build and publish all PMRI packages to PyPI
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/pmri
     permissions:
+      # Required for Trusted Publishing (OIDC). Each of the 16 PyPI
+      # projects (pmri + 15 jmri-*) needs its own trusted-publisher
+      # entry on pypi.org pointing at this repo / workflow / environment.
       id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the release commit
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
-      - name: Install dependencies
+          python-version: "3.12"
+
+      - name: Install build tooling
         run: |
           python -m pip install --upgrade pip
-          pip install .                       #pip install setuptools wheel
-      - name: Build package
+          python -m pip install build
+
+      - name: Build wheels and sdists for all packages
         run: |
-          python -m build  # Could also be python -m build
-      - name: Publish package distributions to PyPI
+          mkdir -p dist
+          # 15 sibling packages, each in their own subdirectory.
+          # Order within the loop doesn't matter: pypi-publish uploads
+          # the whole dist/ directory in one batch and dependency
+          # resolution only happens when a later user runs "pip install".
+          for pkg in jmri-core jmri-dccex jmri-decoderpro jmri-lenz \
+                     jmri-loconet jmri-logixng jmri-mrc jmri-nce \
+                     jmri-ncemonitor jmri-openlcb jmri-pmri \
+                     jmri-scripting jmri-server jmri-web jmri-withrottle; do
+            echo "::group::Building $pkg"
+            python -m build --outdir dist "$pkg"
+            echo "::endgroup::"
+          done
+          # pmri meta-package lives at the repo root.
+          echo "::group::Building pmri (meta-package)"
+          python -m build --outdir dist .
+          echo "::endgroup::"
+          echo "Built artefacts:"
+          ls -la dist/
+
+      - name: Publish all package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

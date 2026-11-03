@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jmri-server"
-version = "0.1.0b39"
+version = "0.1.0"
 description = "JMRI JSON/WebSocket HTTP server â€” Python rewrite Stage 3."
 requires-python = ">=3.12"
 license = "GPL-2.0-or-later"
 dependencies = [
-    "jmri-core==0.1.0b39",
-    "jmri-scripting==0.1.0b39",
-    "jmri-logixng==0.1.0b39",
+    "jmri-core==0.1.0",
+    "jmri-scripting==0.1.0",
+    "jmri-logixng==0.1.0",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.7",

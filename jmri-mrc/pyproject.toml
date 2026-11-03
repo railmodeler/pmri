@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jmri-mrc"
-version = "0.1.0b39"
+version = "0.1.0"
 description = "MRC Prodigy driver stub for the JMRI Python rewrite -- entry-point placeholder; not yet implemented."
 requires-python = ">=3.12"
 license = "GPL-2.0-or-later"
 dependencies = [
-    "jmri-core==0.1.0b39",
+    "jmri-core==0.1.0",
 ]
 
 [project.optional-dependencies]

@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jmri-scripting"
-version = "0.1.0b39"
+version = "0.1.0"
 description = "Scripting host for the JMRI Python rewrite (Stage 9)."
 requires-python = ">=3.12"
 license = "GPL-2.0-or-later"
 dependencies = [
-    "jmri-core==0.1.0b39",
+    "jmri-core==0.1.0",
 ]
 
 [project.optional-dependencies]
