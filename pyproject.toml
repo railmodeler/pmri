@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.20"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pmri"
+version = "0.1.0"
+description = "PMRI -- Python Model Railroad Interface. Meta-package that installs the full PMRI stack (launcher + web service + hardware drivers)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "GPL-2.0-or-later"
+authors = [{name = "J Petrovick", email = "jpetrovick@gmail.com"}]
+keywords = ["model-railroad", "dcc", "jmri", "nce", "loconet", "dcc-ex", "openlcb"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+# Pinned to this release across the entire sibling set. A "pip install
+# pmri==0.1.0" installs a known-tested set of 13 jmri-* wheels.
+# jmri-lenz and jmri-mrc are stubs for now and are NOT pulled in by the
+# meta-package; operators needing those drivers install them explicitly
+# ("pip install jmri-lenz"). When the drivers are production-ready we
+# add them to this list.
+dependencies = [
+    "jmri-core==0.1.0",
+    "jmri-dccex==0.1.0",
+    "jmri-decoderpro==0.1.0",
+    "jmri-loconet==0.1.0",
+    "jmri-logixng==0.1.0",
+    "jmri-nce==0.1.0",
+    "jmri-ncemonitor==0.1.0",
+    "jmri-openlcb==0.1.0",
+    "jmri-pmri==0.1.0",
+    "jmri-scripting==0.1.0",
+    "jmri-server==0.1.0",
+    "jmri-web==0.1.0",
+    "jmri-withrottle==0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/railmodeler/pmri"
+Issues = "https://github.com/railmodeler/pmri/issues"
+Source = "https://github.com/railmodeler/pmri"
+
+# The meta-package ships a tiny src/pmri/__init__.py whose only role is
+# to make the wheel valid (hatchling requires at least one package to
+# build) and to carry a __version__ string. Operators don't "import
+# pmri" directly -- they run the `pmri` console_scripts wrapper that
+# jmri-pmri provides as a transitive dependency.
+[tool.hatch.build.targets.wheel]
+packages = ["src/pmri"]
