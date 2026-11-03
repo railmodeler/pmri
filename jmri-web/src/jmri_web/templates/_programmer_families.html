@@ -1,7 +1,0 @@
-<div class="pick-label">Family</div>
-<select hx-get="/programmer/decoders" hx-target="#models"
-        hx-include="this" hx-swap="innerHTML" hx-trigger="change"
-        name="family">
-  <option value="">— pick —</option>
-  {% for f in families %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
-</select>

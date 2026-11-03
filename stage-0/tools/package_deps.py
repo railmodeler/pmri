@@ -136,7 +136,7 @@ def main(jar_path: pathlib.Path, dot_out: pathlib.Path, md_out: pathlib.Path,
                 edges[(src_pkg, tgt_pkg)] += 1
 
     # ----- DOT output -----
-    dot_lines = ["digraph jmri_packages {", "  rankdir=LR;", "  node [shape=box, fontsize=10];"]
+    dot_lines = ["digraph pmri_packages {", "  rankdir=LR;", "  node [shape=box, fontsize=10];"]
     for pkg, n in sorted(pkg_classes.items()):
         dot_lines.append(f'  "{pkg}" [label="{pkg}\\n{n} classes"];')
     for (a, b), w in sorted(edges.items()):

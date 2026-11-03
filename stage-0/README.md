@@ -59,7 +59,7 @@ drops off fast. The top 200 paths cover the vast majority of scripts. Top hits:
 ### 4. Hardware drivers are mostly leaves — parallelizable
 
 The dependency graph shows **most `jmrix.*` packages are at layer 0** — they
-have no internal JMRI dependencies on each other. Once `jmri_core` (Stage 1)
+have no internal JMRI dependencies on each other. Once `pmri_core` (Stage 1)
 exists, the 40+ drivers can be ported by independent contributors in parallel.
 
 ### 5. The Java core is one giant SCC, which we won't replicate
@@ -69,7 +69,7 @@ Layer 4 of the dependency graph is a single strongly-connected component of
 `jmrix.*` drivers, the server, swing helpers. This is the cost of JMRI's
 Reflections-based plugin discovery: everything ends up tangled.
 
-The Python rewrite breaks this cycle **by design**: `jmri_core` depends on
+The Python rewrite breaks this cycle **by design**: `pmri_core` depends on
 nothing in `jmri.jmrix.*`; drivers register themselves via
 `importlib.metadata` entry points. Dependencies flow one way only:
 `drivers → core`, never `core → drivers`. The SCC disappears.
@@ -78,13 +78,13 @@ nothing in `jmri.jmrix.*`; drivers register themselves via
 
 | JMRI package | Fan-in | Stage 1 mapping |
 |---|---:|---|
-| `jmri` | 154 | `jmri_core` — NamedBean, Manager, InstanceManager |
-| `jmri.util` | 141 | `jmri_core.util` |
-| `jmri.jmrix` | 72 | `jmri_core.hal` — connection ABC |
-| `jmri.implementation` | 68 | `jmri_core.beans.*` — default bean impls |
-| `jmri.configurexml` | 64 | `jmri_core.persistence` — XML load/save |
-| `jmri.managers` | 49 | `jmri_core.manager` — default managers |
-| `jmri.profile` | 35 | `jmri_core.persistence.profile` |
+| `jmri` | 154 | `pmri_core` — NamedBean, Manager, InstanceManager |
+| `jmri.util` | 141 | `pmri_core.util` |
+| `jmri.jmrix` | 72 | `pmri_core.hal` — connection ABC |
+| `jmri.implementation` | 68 | `pmri_core.beans.*` — default bean impls |
+| `jmri.configurexml` | 64 | `pmri_core.persistence` — XML load/save |
+| `jmri.managers` | 49 | `pmri_core.manager` — default managers |
+| `jmri.profile` | 35 | `pmri_core.persistence.profile` |
 | `jmri.beans` | 29 | folded into bean abstractions (no PropertyChangeListener) |
 
 These are what Stage 1 must deliver first; everything else builds on them.

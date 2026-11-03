@@ -37,7 +37,7 @@ drive LocoNet, DCC-EX, and OpenLCB if you swap the connection setting.
   scripts auto-launch on profile load.
 - **NCE opcode safety audit**: every opcode we send is now verified
   against JMRI's decoder table. Fixed several silently-wrong opcodes
-  (see the audit table in `jmri-nce/src/jmri_nce/opcodes.py`).
+  (see the audit table in `pmri-nce/src/pmri_nce/opcodes.py`).
 
 ## Prerequisites
 
@@ -67,18 +67,18 @@ brew install python@3.12
 The packages aren't on PyPI yet — copy the directories you need:
 
 ```
-jmri-core/         (required)
-jmri-server/       (required)
-jmri-nce/          (required for NCE hardware)
-jmri-web/          (recommended — browser UI)
-jmri-withrottle/   (recommended — Engine Driver / WiThrottle iOS support)
-jmri-loconet/      (optional — second hardware shape)
-jmri-ncemonitor/   (optional — passive NCE cab-bus sniffer)
-jmri-dccex/        (optional — DCC-EX command stations)
-jmri-openlcb/      (optional — LCC/OpenLCB nodes)
-jmri-logixng/      (optional — automation engine)
-jmri-scripting/    (optional — Python automation scripts)
-jmri-decoderpro/   (optional — CV programming)
+pmri-core/         (required)
+pmri-server/       (required)
+pmri-nce/          (required for NCE hardware)
+pmri-web/          (recommended — browser UI)
+pmri-withrottle/   (recommended — Engine Driver / WiThrottle iOS support)
+pmri-loconet/      (optional — second hardware shape)
+pmri-ncemonitor/   (optional — passive NCE cab-bus sniffer)
+pmri-dccex/        (optional — DCC-EX command stations)
+pmri-openlcb/      (optional — LCC/OpenLCB nodes)
+pmri-logixng/      (optional — automation engine)
+pmri-scripting/    (optional — Python automation scripts)
+pmri-decoderpro/   (optional — CV programming)
 ```
 
 Easiest:
@@ -88,26 +88,26 @@ Easiest:
 
 ## Install the packages
 
-In the directory containing all the `jmri-*` subdirs:
+In the directory containing all the `pmri-*` subdirs:
 
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate          # Linux/macOS
 # On Windows PowerShell:  .venv\Scripts\Activate.ps1
 
-pip install -e ./jmri-core
-pip install -e ./jmri-scripting
-pip install -e ./jmri-server
-pip install -e ./jmri-decoderpro
-pip install -e ./jmri-web
-pip install -e ./jmri-withrottle
-pip install -e ./jmri-nce
+pip install -e ./pmri-core
+pip install -e ./pmri-scripting
+pip install -e ./pmri-server
+pip install -e ./pmri-decoderpro
+pip install -e ./pmri-web
+pip install -e ./pmri-withrottle
+pip install -e ./pmri-nce
 ```
 
 Verify the NCE driver is discoverable:
 
 ```bash
-python -c "from jmri_core.plugins import load_connections; print(sorted(load_connections()))"
+python -c "from pmri_core.plugins import load_connections; print(sorted(load_connections()))"
 # Should print: ['internal', 'nce']   (+ any other drivers you installed)
 ```
 
@@ -152,13 +152,13 @@ Two environment variables select the connection:
 ```bash
 export JMRI_CONNECTION=nce
 export JMRI_CONNECTION_SETTINGS='{"kind":"serial","port":"/dev/ttyUSB0","baud":9600,"command_set":"PH-Pro 2006+"}'
-uvicorn jmri_web:create_app --factory --host 0.0.0.0 --port 8000
+uvicorn pmri_web:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
-If you didn't install `jmri-web`, run the API-only server:
+If you didn't install `pmri-web`, run the API-only server:
 
 ```bash
-uvicorn jmri_server:create_app --factory --host 0.0.0.0 --port 8000
+uvicorn pmri_server:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
 ## NCE settings reference
@@ -207,7 +207,7 @@ attribute relative to it.
 # Linux Pi running against an SMB-mounted Windows JMRI directory:
 export JMRI_SETTINGS_DIR=/mnt/jmri
 # or against an rsync'd copy:
-export JMRI_SETTINGS_DIR=/home/pi/jmri-data
+export JMRI_SETTINGS_DIR=/home/pi/pmri-data
 ```
 
 ### What's loaded
@@ -276,7 +276,7 @@ curl -X POST http://<target-ip>:8000/json/ \
      -d '{"type":"turnout","method":"post","data":{"name":"NT12","state":4}}'
 ```
 
-From a browser (if `jmri-web` is installed):
+From a browser (if `pmri-web` is installed):
 
 Open `http://<target-ip>:8000/`. Nav bar gives you home / throttle /
 turnouts / sensors / lights / roster / programmer / scripts / panel.
@@ -289,7 +289,7 @@ automatically.
 | Symptom | Likely cause + fix |
 |---|---|
 | `Permission denied` opening serial port (Linux) | Add yourself to `dialout`; verify `ls -l /dev/ttyUSB0` |
-| `unknown connection 'nce'` at startup | `jmri-nce` not installed — `pip install -e ./jmri-nce` |
+| `unknown connection 'nce'` at startup | `pmri-nce` not installed — `pip install -e ./pmri-nce` |
 | Auto-detect returns quickly and falls back | Alpha-2 uses the safe `SW_REV_CMD` (0xAA); no wedging risk. Falling back means the CS didn't answer within 500 ms — the fallback command set is usually fine. Set `command_set` explicitly if you want to skip the probe. |
 | `NCE command READ16(0xec00) timed out` | Your firmware or link is dropping the 16-byte accessory-state read. Add `"disable_turnout_monitor": true` to your settings. Throw/close commands still work; only the *known* state poll is off. |
 | `NceCommandError` with weird ACK byte | The traffic controller drains stale buffer bytes between commands; if you still see this with the alpha, capture the log and file an issue with the `ack=` byte value. |
@@ -301,10 +301,10 @@ automatically.
 ```bash
 PYTHONUNBUFFERED=1 \
   LOGLEVEL=DEBUG \
-  uvicorn jmri_web:create_app --factory --log-level debug
+  uvicorn pmri_web:create_app --factory --log-level debug
 ```
 
-`jmri_nce.traffic` logs every command at DEBUG including drained-stale-byte
+`pmri_nce.traffic` logs every command at DEBUG including drained-stale-byte
 diagnostics — useful when isolating a misbehaving opcode.
 
 ## Running as a service (systemd, Linux)
@@ -321,7 +321,7 @@ User=pi
 WorkingDirectory=/home/pi/pmri
 Environment=JMRI_CONNECTION=nce
 Environment=JMRI_CONNECTION_SETTINGS={"kind":"serial","port":"/dev/nce","baud":9600,"command_set":"PH-Pro 2006+"}
-ExecStart=/home/pi/pmri/.venv/bin/uvicorn jmri_web:create_app --factory --host 0.0.0.0 --port 8000
+ExecStart=/home/pi/pmri/.venv/bin/uvicorn pmri_web:create_app --factory --host 0.0.0.0 --port 8000
 Restart=on-failure
 
 [Install]
@@ -336,7 +336,7 @@ sudo journalctl -u jmri -f      # follow logs
 
 ## Connecting Engine Driver / WiThrottle iOS
 
-If `jmri-withrottle` is installed, the server also listens for WiThrottle
+If `pmri-withrottle` is installed, the server also listens for WiThrottle
 clients on **TCP port 12090**. Open your phone's WiFi throttle app and
 add a manual server entry pointing at `<target-ip>:12090` (some clients
 auto-discover via Bonjour — that's a Stage 11 addition; for alpha add it

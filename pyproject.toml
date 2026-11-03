@@ -23,25 +23,25 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 # Pinned to this release across the entire sibling set. A "pip install
-# pmri==0.1.0" installs a known-tested set of 13 jmri-* wheels.
-# jmri-lenz and jmri-mrc are stubs for now and are NOT pulled in by the
+# pmri==0.1.0" installs a known-tested set of 13 pmri-* wheels.
+# pmri-lenz and pmri-mrc are stubs for now and are NOT pulled in by the
 # meta-package; operators needing those drivers install them explicitly
-# ("pip install jmri-lenz"). When the drivers are production-ready we
+# ("pip install pmri-lenz"). When the drivers are production-ready we
 # add them to this list.
 dependencies = [
-    "jmri-core==0.1.0",
-    "jmri-dccex==0.1.0",
-    "jmri-decoderpro==0.1.0",
-    "jmri-loconet==0.1.0",
-    "jmri-logixng==0.1.0",
-    "jmri-nce==0.1.0",
-    "jmri-ncemonitor==0.1.0",
-    "jmri-openlcb==0.1.0",
-    "jmri-pmri==0.1.0",
-    "jmri-scripting==0.1.0",
-    "jmri-server==0.1.0",
-    "jmri-web==0.1.0",
-    "jmri-withrottle==0.1.0",
+    "pmri-core==0.1.0",
+    "pmri-dccex==0.1.0",
+    "pmri-decoderpro==0.1.0",
+    "pmri-loconet==0.1.0",
+    "pmri-logixng==0.1.0",
+    "pmri-nce==0.1.0",
+    "pmri-ncemonitor==0.1.0",
+    "pmri-openlcb==0.1.0",
+    "pmri-pmri==0.1.0",
+    "pmri-scripting==0.1.0",
+    "pmri-server==0.1.0",
+    "pmri-web==0.1.0",
+    "pmri-withrottle==0.1.0",
 ]
 
 [project.urls]
@@ -53,6 +53,6 @@ Source = "https://github.com/railmodeler/pmri"
 # to make the wheel valid (hatchling requires at least one package to
 # build) and to carry a __version__ string. Operators don't "import
 # pmri" directly -- they run the `pmri` console_scripts wrapper that
-# jmri-pmri provides as a transitive dependency.
+# pmri-pmri provides as a transitive dependency.
 [tool.hatch.build.targets.wheel]
 packages = ["src/pmri"]

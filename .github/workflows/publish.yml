@@ -13,7 +13,7 @@ jobs:
       url: https://pypi.org/p/pmri
     permissions:
       # Required for Trusted Publishing (OIDC). Each of the 16 PyPI
-      # projects (pmri + 15 jmri-*) needs its own trusted-publisher
+      # projects (pmri + 15 pmri-*) needs its own trusted-publisher
       # entry on pypi.org pointing at this repo / workflow / environment.
       id-token: write
       contents: read
@@ -38,10 +38,10 @@ jobs:
           # Order within the loop doesn't matter: pypi-publish uploads
           # the whole dist/ directory in one batch and dependency
           # resolution only happens when a later user runs "pip install".
-          for pkg in jmri-core jmri-dccex jmri-decoderpro jmri-lenz \
-                     jmri-loconet jmri-logixng jmri-mrc jmri-nce \
-                     jmri-ncemonitor jmri-openlcb jmri-pmri \
-                     jmri-scripting jmri-server jmri-web jmri-withrottle; do
+          for pkg in pmri-core pmri-dccex pmri-decoderpro pmri-lenz \
+                     pmri-loconet pmri-logixng pmri-mrc pmri-nce \
+                     pmri-ncemonitor pmri-openlcb pmri-pmri \
+                     pmri-scripting pmri-server pmri-web pmri-withrottle; do
             echo "::group::Building $pkg"
             python -m build --outdir dist "$pkg"
             echo "::endgroup::"

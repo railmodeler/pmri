@@ -1,4 +1,4 @@
-"""Generate the pdoc reference under ``jmri-web/src/jmri_web/static/docs/``.
+"""Generate the pdoc reference under ``pmri-web/src/pmri_web/static/docs/``.
 
 Run from the repo root:
 
@@ -15,7 +15,7 @@ copies :doc:`OVERVIEW.md` into the same tree as ``index.html`` (so
 package list -- which is fine but less friendly).
 
 Requires ``pdoc`` on the environment; install with ``pip install pdoc``.
-Not a runtime dependency of jmri-server -- the docs are baked into
+Not a runtime dependency of pmri-server -- the docs are baked into
 the web wheel when the release is built, not regenerated on every
 server start.
 
@@ -34,7 +34,7 @@ import subprocess
 import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT_DIR = REPO_ROOT / "jmri-web" / "src" / "jmri_web" / "static" / "docs"
+OUT_DIR = REPO_ROOT / "pmri-web" / "src" / "pmri_web" / "static" / "docs"
 
 
 def _iter_submodules(package_name: str) -> list[str]:
@@ -44,7 +44,7 @@ def _iter_submodules(package_name: str) -> list[str]:
     ``__init__.py`` (a real limitation when you use plain submodules
     without ``from .submod import *``). We enumerate the tree
     ourselves so every ``.py`` file gets a section in the generated
-    HTML -- matters most for packages like ``jmri_core`` where
+    HTML -- matters most for packages like ``pmri_core`` where
     ``ConfigStore`` / ``Profile`` / ``PowerManager`` live in
     submodules the top-level ``__init__`` doesn't re-export.
     """
@@ -60,21 +60,21 @@ def _iter_submodules(package_name: str) -> list[str]:
     return out
 
 # Every rewrite package. Order matters for pdoc's sidebar navigation --
-# jmri_core first (foundational), then infrastructure, then drivers,
+# pmri_core first (foundational), then infrastructure, then drivers,
 # then top-of-stack (server, web, decoderpro).
 PACKAGES = [
-    "jmri_core",
-    "jmri_scripting",
-    "jmri_logixng",
-    "jmri_nce",
-    "jmri_loconet",
-    "jmri_dccex",
-    "jmri_openlcb",
-    "jmri_ncemonitor",
-    "jmri_withrottle",
-    "jmri_decoderpro",
-    "jmri_server",
-    "jmri_web",
+    "pmri_core",
+    "pmri_scripting",
+    "pmri_logixng",
+    "pmri_nce",
+    "pmri_loconet",
+    "pmri_dccex",
+    "pmri_openlcb",
+    "pmri_ncemonitor",
+    "pmri_withrottle",
+    "pmri_decoderpro",
+    "pmri_server",
+    "pmri_web",
 ]
 
 

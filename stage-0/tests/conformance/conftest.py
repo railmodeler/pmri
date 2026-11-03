@@ -1,7 +1,7 @@
 """Pytest fixtures shared by Stage 0+ conformance tests.
 
 These tests run against the **contracts** in ``stage-0/contracts/``. Stage 1's
-``jmri_core`` package will be added to the path here once it exists; until then
+``pmri_core`` package will be added to the path here once it exists; until then
 the tests in this directory only verify the contracts themselves are intact.
 """
 from __future__ import annotations

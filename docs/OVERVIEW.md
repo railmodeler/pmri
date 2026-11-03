@@ -8,23 +8,23 @@ native on a Raspberry Pi without the Java runtime.
 
 ## Package layout
 
-Twelve packages, layered so drivers depend on `jmri_core` and
-`jmri_server` orchestrates the JSON API + WebSocket surface:
+Twelve packages, layered so drivers depend on `pmri_core` and
+`pmri_server` orchestrates the JSON API + WebSocket surface:
 
 | Package              | Role |
 |----------------------|------|
-| `jmri_core`          | Domain model — `NamedBean`, `Manager`, `Signal`, `SystemConnection`, `Profile`, persistence + XML codecs |
-| `jmri_scripting`     | Async script runner — CPython 3 replacement for JMRI's Jython 2.7 host |
-| `jmri_logixng`       | LogixNG (rules + actions) engine + YAML persistence |
-| `jmri_nce`           | NCE PowerPro / SB5 driver (RS-232 / USB serial) |
-| `jmri_loconet`       | Digitrax LocoNet driver (LocoBuffer USB, LnTcpServer) |
-| `jmri_dccex`         | DCC-EX text-protocol driver (serial + TCP) |
-| `jmri_openlcb`       | OpenLCB / LCC driver (GridConnect, datagrams, memory config, well-known power events) |
-| `jmri_ncemonitor`    | NCE Cab Bus passive monitor (RS-485, 9-bit framing) |
-| `jmri_withrottle`    | WiThrottle server (Engine Driver, WiThrottle Lite) |
-| `jmri_decoderpro`    | Decoder catalog, programming sessions, per-mfg productID probes |
-| `jmri_server`        | JSON API dispatcher, WebSocket push, service registry, profile persistence, config store |
-| `jmri_web`           | FastAPI web UI, Jinja2 templates, htmx-driven mutations |
+| `pmri_core`          | Domain model — `NamedBean`, `Manager`, `Signal`, `SystemConnection`, `Profile`, persistence + XML codecs |
+| `pmri_scripting`     | Async script runner — CPython 3 replacement for JMRI's Jython 2.7 host |
+| `pmri_logixng`       | LogixNG (rules + actions) engine + YAML persistence |
+| `pmri_nce`           | NCE PowerPro / SB5 driver (RS-232 / USB serial) |
+| `pmri_loconet`       | Digitrax LocoNet driver (LocoBuffer USB, LnTcpServer) |
+| `pmri_dccex`         | DCC-EX text-protocol driver (serial + TCP) |
+| `pmri_openlcb`       | OpenLCB / LCC driver (GridConnect, datagrams, memory config, well-known power events) |
+| `pmri_ncemonitor`    | NCE Cab Bus passive monitor (RS-485, 9-bit framing) |
+| `pmri_withrottle`    | WiThrottle server (Engine Driver, WiThrottle Lite) |
+| `pmri_decoderpro`    | Decoder catalog, programming sessions, per-mfg productID probes |
+| `pmri_server`        | JSON API dispatcher, WebSocket push, service registry, profile persistence, config store |
+| `pmri_web`           | FastAPI web UI, Jinja2 templates, htmx-driven mutations |
 
 ## The core patterns
 
@@ -49,14 +49,14 @@ The `SystemConnection` ABC binds one hardware driver (or the
 - `programmers` — a `ProgrammerManager`
 - `consists` — a `ConsistManager`
 
-Each driver package (`jmri_nce`, `jmri_loconet`, `jmri_dccex`,
-`jmri_openlcb`) implements this class once. The `internal`
-connection lives in `jmri_core.hal.internal` and provides
+Each driver package (`pmri_nce`, `pmri_loconet`, `pmri_dccex`,
+`pmri_openlcb`) implements this class once. The `internal`
+connection lives in `pmri_core.hal.internal` and provides
 software-only beans for scripting / test scenarios.
 
 ### `Signal[T]` — the async event bus
 
-`jmri_core.events.Signal` is the async fan-out primitive. Every
+`pmri_core.events.Signal` is the async fan-out primitive. Every
 manager, connection, and background task publishes events via
 signals; the JSON API's push layer subscribes to them and mirrors
 onto the WebSocket. Signals are ordinary Python objects, not tied
@@ -65,7 +65,7 @@ tests without an event loop.
 
 ### `Profile`
 
-`jmri_core.persistence.Profile` mirrors JMRI Java's per-profile
+`pmri_core.persistence.Profile` mirrors JMRI Java's per-profile
 layout: `<settings-root>/<name>/PanelPro.xml`, `roster.xml`,
 `logixng/*.yaml`, `python/*.py`, plus the shared
 `<settings-root>/python/` for cross-profile scripts. Profiles are
@@ -73,7 +73,7 @@ managed at runtime via the `configProfile` JSON topic.
 
 ### `ConfigStore` + `PanelPro.xml`
 
-`jmri_server.config_store.ConfigStore` holds the current
+`pmri_server.config_store.ConfigStore` holds the current
 `PanelPro.xml` in memory + syncs to disk on every bean mutation
 (atomic write). Bean tables (turnouts / sensors / lights) and
 preserved unknown children round-trip losslessly so a `<jmri>` XML
@@ -83,9 +83,9 @@ edited by hand keeps its comments and non-modelled sections.
 
 A typical WebSocket request goes through:
 
-1. **`jmri_web` routes** — Jinja2 templates render HTML; htmx POSTs
+1. **`pmri_web` routes** — Jinja2 templates render HTML; htmx POSTs
    dispatch to the server via `handle.registry.dispatch()`.
-2. **`jmri_server.registry.ServiceRegistry`** — maps topic strings
+2. **`pmri_server.registry.ServiceRegistry`** — maps topic strings
    to `JsonService` subclasses. `dispatch()` normalises the JSON
    envelope, resolves the topic, calls the right method
    (`on_list` / `on_get` / `on_put` / `on_post` / `on_delete`), wraps
@@ -98,7 +98,7 @@ A typical WebSocket request goes through:
    metadata, roster store, decoder catalog).
 
 Push messages go the reverse way: manager `Signal[T].emit()` fires,
-a `PushSubscription` (in `jmri_server.push`) formats it into a
+a `PushSubscription` (in `pmri_server.push`) formats it into a
 JSON envelope, and every connected WebSocket receives it.
 
 ## The topics served
@@ -114,15 +114,15 @@ Rewrite-only topics (not in JMRI Java's original API): `logs`,
 
 | Flow | Code |
 |------|------|
-| Throttle acquire / speed / release | `jmri_server.services.throttle` → connection's `ThrottleManager` → driver-specific `Throttle` |
-| CV programming (service + ops mode) | `jmri_server.services.programmer` → `jmri_decoderpro.session.ProgrammingSession` → connection's `ProgrammerManager` |
-| Decoder identify | `ProgrammingSession.read_identity_extended()` → `jmri_decoderpro.probes` → `DecoderCatalog.identify_by_cv_extended` |
-| Roster CRUD | `jmri_server.services.roster` → `jmri_server.roster.RosterStore` → `<profile>/roster.xml` |
-| Profile switch | `jmri_server.app.switch_active_profile` → rebuild `ConfigStore`, refresh managers from `PanelPro.xml`, rerun script autoload |
-| Consist ops | `jmri_server.services.consist` → connection's `ConsistManager` (LocoNet `OpcConsistFunc`, NCE consist opcodes, DCC-EX `<M>`) |
-| LogixNG | `jmri_server.services.logixng` → `jmri_logixng.engine` → per-profile `<profile>/logixng/*.yaml` |
-| Signalling | `jmri_server.services.signal_system` + `signal_head` + `signal_mast` → `jmri_core.signalling.system.SignalSystem` |
-| Fast clock | `jmri_server.services.fast_clock.TimeService` → `jmri_core.fast_clock.FastClock` |
+| Throttle acquire / speed / release | `pmri_server.services.throttle` → connection's `ThrottleManager` → driver-specific `Throttle` |
+| CV programming (service + ops mode) | `pmri_server.services.programmer` → `pmri_decoderpro.session.ProgrammingSession` → connection's `ProgrammerManager` |
+| Decoder identify | `ProgrammingSession.read_identity_extended()` → `pmri_decoderpro.probes` → `DecoderCatalog.identify_by_cv_extended` |
+| Roster CRUD | `pmri_server.services.roster` → `pmri_server.roster.RosterStore` → `<profile>/roster.xml` |
+| Profile switch | `pmri_server.app.switch_active_profile` → rebuild `ConfigStore`, refresh managers from `PanelPro.xml`, rerun script autoload |
+| Consist ops | `pmri_server.services.consist` → connection's `ConsistManager` (LocoNet `OpcConsistFunc`, NCE consist opcodes, DCC-EX `<M>`) |
+| LogixNG | `pmri_server.services.logixng` → `pmri_logixng.engine` → per-profile `<profile>/logixng/*.yaml` |
+| Signalling | `pmri_server.services.signal_system` + `signal_head` + `signal_mast` → `pmri_core.signalling.system.SignalSystem` |
+| Fast clock | `pmri_server.services.fast_clock.TimeService` → `pmri_core.fast_clock.FastClock` |
 
 ## Reading the reference
 
@@ -138,16 +138,16 @@ DCC-EX, OpenLCB) and the JMRI decompiled sources under
 
 1. Install packages in dev mode (editable):
    ```
-   pip install -e jmri-core -e jmri-server -e jmri-web -e jmri-scripting \
-                -e jmri-logixng -e jmri-nce -e jmri-loconet -e jmri-dccex \
-                -e jmri-openlcb -e jmri-ncemonitor -e jmri-withrottle \
-                -e jmri-decoderpro
+   pip install -e pmri-core -e pmri-server -e pmri-web -e pmri-scripting \
+                -e pmri-logixng -e pmri-nce -e pmri-loconet -e pmri-dccex \
+                -e pmri-openlcb -e pmri-ncemonitor -e pmri-withrottle \
+                -e pmri-decoderpro
    ```
 2. Set `JMRI_SETTINGS_DIR` (default `~/JMRI` on Windows,
    `~/Library/Preferences/JMRI` on macOS, `~/.jmri` on Linux).
 3. Run the web server:
    ```
-   uvicorn jmri_web:create_app --factory --host 0.0.0.0 --port 12080
+   uvicorn pmri_web:create_app --factory --host 0.0.0.0 --port 12080
    ```
 4. Open `http://localhost:12080/` to see the home tab.
 

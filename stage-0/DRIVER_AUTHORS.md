@@ -9,19 +9,19 @@ sessions on NCE PowerPro 6.2.3.
 
 A driver is a Python package that:
 
-1. Subclasses `jmri_core.hal.connection.SystemConnection`.
+1. Subclasses `pmri_core.hal.connection.SystemConnection`.
 2. Sets two class vars: `name` (vendor label like `"NCE"`) and `prefix`
    (single-letter JMRI system-name prefix like `"N"`).
 3. Registers an entry point in `pyproject.toml`:
 
    ```toml
-   [project.entry-points."jmri.connection"]
-   yourdriver = "jmri_yourdriver:YourdriverConnection"
+   [project.entry-points."pmri.connection"]
+   yourdriver = "pmri_yourdriver:YourdriverConnection"
    ```
 
-That's the wire. `jmri_core.plugins.load_connections()` discovers the
-driver and `jmri_server.app.build_app(connection_name="yourdriver")`
-opens it. No glue code in `jmri-core` or `jmri-server` is required.
+That's the wire. `pmri_core.plugins.load_connections()` discovers the
+driver and `pmri_server.app.build_app(connection_name="yourdriver")`
+opens it. No glue code in `pmri-core` or `pmri-server` is required.
 
 ## Lifecycle
 
@@ -148,7 +148,7 @@ Every existing driver follows the same test recipe:
    events (cab throws a turnout, AIU goes high, etc.).
 5. Assertions confirm beans get the right state changes.
 
-Reference: `jmri-nce/tests/unit/test_monitors.py::FakeCS` is the most
+Reference: `pmri-nce/tests/unit/test_monitors.py::FakeCS` is the most
 useful template — a small CS simulator with `address → byte` memory and
 `aiu → word` dicts that answers reads from that state.
 
@@ -166,7 +166,7 @@ Match the existing drivers:
 | `mypy --strict src` | clean |
 | `pytest tests/` | ≥85% branch coverage on protocol/bean code |
 | `loopback` test fixture | works without real hardware |
-| Entry-point discovery | `jmri_core.plugins.load_connections()` finds the driver |
+| Entry-point discovery | `pmri_core.plugins.load_connections()` finds the driver |
 | `SystemConnection.open(loopback_settings)` end-to-end | turnouts/sensors/power testable in unit tests |
 
 ## Known abstraction gaps (will not block Stage 10)
@@ -199,8 +199,8 @@ When in doubt, look at the closest-shaped existing driver:
 
 | Your protocol shape | Look at |
 |---|---|
-| Async broadcast bus (LocoNet, MERG/CBUS) | `jmri-loconet` |
-| Sync request/response + polling (NCE, MRC, Lenz) | `jmri-nce` |
-| Text protocol (DCC-EX, SRCP, ECoS, Marklin) | `jmri-dccex` |
-| Event-driven (OpenLCB/LCC, MQTT) | `jmri-openlcb` |
-| Passive observer (any sniffer/monitor) | `jmri-ncemonitor` |
+| Async broadcast bus (LocoNet, MERG/CBUS) | `pmri-loconet` |
+| Sync request/response + polling (NCE, MRC, Lenz) | `pmri-nce` |
+| Text protocol (DCC-EX, SRCP, ECoS, Marklin) | `pmri-dccex` |
+| Event-driven (OpenLCB/LCC, MQTT) | `pmri-openlcb` |
+| Passive observer (any sniffer/monitor) | `pmri-ncemonitor` |

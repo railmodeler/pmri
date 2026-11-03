@@ -1,7 +1,7 @@
 """Stage 0 sanity tests -- every contract file is present and parseable.
 
 These are the bedrock tests Stage 1 will build on. Future Stage 1+ tests in
-this directory will additionally exercise ``jmri_core`` against each contract.
+this directory will additionally exercise ``pmri_core`` against each contract.
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def test_golden_xml_parses(golden_xml_file: pathlib.Path) -> None:
 
 
 def test_golden_xml_roundtrip(golden_xml_file: pathlib.Path) -> None:
-    """Round-trip golden files through ``jmri_core.persistence``.
+    """Round-trip golden files through ``pmri_core.persistence``.
 
     Supported as of Stage 2:
       * ``locomotive-config`` -- full lossless (byte-equal after two saves)
@@ -73,7 +73,7 @@ def test_golden_xml_roundtrip(golden_xml_file: pathlib.Path) -> None:
     root_tag = ET.parse(golden_xml_file).getroot().tag
 
     if root_tag == "locomotive-config":
-        from jmri_core.persistence import (  # noqa: PLC0415
+        from pmri_core.persistence import (  # noqa: PLC0415
             load_locomotive_bytes,
             save_locomotive_bytes,
         )
@@ -87,7 +87,7 @@ def test_golden_xml_roundtrip(golden_xml_file: pathlib.Path) -> None:
         return
 
     if root_tag == "operations-config":
-        from jmri_core.persistence import (  # noqa: PLC0415
+        from pmri_core.persistence import (  # noqa: PLC0415
             load_operations_bytes,
             save_operations_bytes,
         )
@@ -104,7 +104,7 @@ def test_golden_xml_roundtrip(golden_xml_file: pathlib.Path) -> None:
         return
 
     if root_tag == "layout-config":
-        from jmri_core.persistence import (  # noqa: PLC0415
+        from pmri_core.persistence import (  # noqa: PLC0415
             load_panel_bytes,
             save_panel_bytes,
         )
@@ -117,7 +117,7 @@ def test_golden_xml_roundtrip(golden_xml_file: pathlib.Path) -> None:
 
     if root_tag == "decoder-config":
         # Read-only support -- parsing without error is the contract.
-        from jmri_core.persistence import load_decoder_bytes  # noqa: PLC0415
+        from pmri_core.persistence import load_decoder_bytes  # noqa: PLC0415
         load_decoder_bytes(golden_xml_file.read_bytes())
         return
 
@@ -127,7 +127,7 @@ def test_golden_xml_roundtrip(golden_xml_file: pathlib.Path) -> None:
 def test_server_response_matches_schema(
     load_json_schema: object, json_schema_file: pathlib.Path
 ) -> None:
-    """Stage 3: requesting the topic against jmri-server emits a response whose
+    """Stage 3: requesting the topic against pmri-server emits a response whose
     data validates against the corresponding JMRI JSON schema.
 
     For each ``-server.json`` schema we exercise the topic; for ``-client.json``
@@ -156,7 +156,7 @@ def test_server_response_matches_schema(
     from fastapi.testclient import TestClient  # noqa: PLC0415
     import jsonschema  # noqa: PLC0415
 
-    from jmri_server.app import build_app  # noqa: PLC0415
+    from pmri_server.app import build_app  # noqa: PLC0415
 
     handle = build_app()
     with TestClient(handle.app) as client:
