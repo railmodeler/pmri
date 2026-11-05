@@ -133,11 +133,11 @@ _SCHEMAS: dict[str, list[tuple[str, str, str, tuple[str, ...] | None]]] = {
         ("tcp_port", "TCP port (tcp only)", "1234", None),
         ("systemPrefix", "System prefix", "L", None),
     ],
-    # Digitrax is LocoNet protocol over a Digitrax interface (PR3/PR4,
-    # LocoBuffer-USB, etc.). Server-side the "digitrax" type is
-    # aliased to the loconet driver (see pmri_server.app
-    # _CONNECTION_TYPE_ALIASES) so this entry Just Works without a
-    # separate driver package.
+    # Digitrax is LocoNet protocol over a Digitrax command station
+    # (DCS-xxx, PR3/PR4, LocoBuffer-USB, etc.). Driver lives in the
+    # pmri-digitrax wheel; the stub there layers Digitrax-specific
+    # command-station semantics on top of pmri-loconet's wire-protocol
+    # transport.
     "digitrax": [
         ("kind", "Transport", "serial", ("serial", "tcp")),
         ("port", "Serial port", "", None),

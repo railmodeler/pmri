@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pmri-nce"
 version = "0.1.0"
-description = "NCE driver for the JMRI Python rewrite (Stage 4 â€” second driver, sync/poll model)."
+description = "NCE command station + passive Cab Bus monitor drivers for PMRI."
 requires-python = ">=3.12"
 license = "GPL-2.0-or-later"
 dependencies = [
@@ -23,14 +23,19 @@ dev = [
     "ruff>=0.5,<1.0",
 ]
 
-# Registers our driver with the core's plugin machinery.
-# After `pip install`, pmri_core.plugins.load_connections() reports
-# {'internal': ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦, 'loconet': ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦, 'nce': NceConnection}.
+# Registers both drivers with the core's plugin machinery. After
+# `pip install pmri-nce`, pmri_core.plugins.load_connections() reports
+# both {'nce': NceConnection, 'ncemonitor': NceMonitorConnection}.
+# The ncemonitor driver was merged into this wheel from the former
+# standalone pmri-ncemonitor package when the 1-to-1 OIDC / PyPI
+# constraint forced the base-vs-driver repo split; the import name
+# `pmri_ncemonitor` is preserved so existing code keeps working.
 [project.entry-points."pmri.connection"]
 nce = "pmri_nce:NceConnection"
+ncemonitor = "pmri_ncemonitor:NceMonitorConnection"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pmri_nce"]
+packages = ["src/pmri_nce", "src/pmri_ncemonitor"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -63,9 +68,9 @@ ignore = [
 ]
 
 [tool.coverage.run]
-source = ["pmri_nce"]
+source = ["pmri_nce", "pmri_ncemonitor"]
 branch = true
-# The serial transport is hardware-only â€” covered by manual hardware smoke
+# The serial transport is hardware-only -- covered by manual hardware smoke
 # tests gated behind the `hardware` pytest marker, not by the loopback suite.
 omit = ["*/transport/serial_port.py"]
 

@@ -239,17 +239,6 @@ class AppHandle:
     push: PushManager
 
 
-_CONNECTION_TYPE_ALIASES: dict[str, str] = {
-    # Digitrax hardware (PR3/PR4, LocoBuffer-USB, DCS-5xx throttles)
-    # speaks the LocoNet protocol. The launcher exposes "digitrax" as
-    # its own menu entry (Case-3 feedback: users expect to see the
-    # brand name they bought, not just the protocol name); route it
-    # here to the installed loconet driver so no separate pmri-digitrax
-    # entry-point is needed.
-    "digitrax": "loconet",
-}
-
-
 def select_connection(
     name: str | None, settings: ConnectionSettings | None = None
 ) -> SystemConnection:
@@ -258,21 +247,15 @@ def select_connection(
     *name* must match an installed ``pmri.connection`` entry point. The
     returned connection is **not** opened; :func:`build_app` opens it via
     the FastAPI lifespan, passing the stashed *settings* through.
-
-    A small alias map (:data:`_CONNECTION_TYPE_ALIASES`) redirects
-    marketing-name types ("digitrax") to the underlying protocol driver
-    ("loconet") so the GUI menu can carry brand names without needing
-    a parallel entry-point package per brand.
     """
     if name is None:
         return InternalConnection()
-    resolved_name = _CONNECTION_TYPE_ALIASES.get(name, name)
     connections = load_connections()
-    if resolved_name not in connections:
+    if name not in connections:
         raise ValueError(
             f"unknown connection {name!r}; installed: {sorted(connections)}"
         )
-    instance = connections[resolved_name]()
+    instance = connections[name]()
     instance.__dict__["_open_settings"] = settings or {}
     return instance
 
