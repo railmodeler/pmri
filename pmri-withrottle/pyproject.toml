@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pmri-withrottle"
-version = "0.1.0"
+version = "0.1.1"
 description = "WiThrottle TCP server â€” Engine Driver / WiThrottle iOS compatibility for pmri-server"
 requires-python = ">=3.12"
 dependencies = [
-    "pmri-core==0.1.0",
-    "pmri-server==0.1.0",
+    "pmri-core==0.1.1",
+    "pmri-server==0.1.1",
 ]
 
 [project.optional-dependencies]

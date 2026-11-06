@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pmri-logixng"
-version = "0.1.0"
+version = "0.1.1"
 description = "LogixNG automation engine for the JMRI Python rewrite (Stage 7)."
 requires-python = ">=3.12"
 license = "GPL-2.0-or-later"
 dependencies = [
-    "pmri-core==0.1.0",
+    "pmri-core==0.1.1",
     "pydantic>=2.7",
     "PyYAML>=6.0",
     # lxml pulled in transitively via pmri-core but declared here
