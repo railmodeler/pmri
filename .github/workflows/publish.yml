@@ -1,4 +1,4 @@
-name: Upload Python Packages to PyPI when a Release is Created
+name: Upload PMRI base wheel to PyPI when a Release is Created
 
 on:
   release:
@@ -6,22 +6,21 @@ on:
 
 jobs:
   pypi-publish:
-    name: Build and publish all PMRI packages to PyPI
+    name: Build and publish the pmri base wheel to PyPI
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/pmri
     permissions:
-      # Required for Trusted Publishing (OIDC). Each of the 11 PyPI
-      # projects published by THIS workflow (pmri meta + 10 pmri-*
-      # base siblings) needs its own trusted-publisher entry on
-      # pypi.org pointing at this repo / workflow / environment.
-      # The 5 command-station drivers (pmri-nce, pmri-dccex,
-      # pmri-lenz, pmri-mrc, pmri-digitrax) live in separate repos
-      # with their own publish workflows and PyPI trusted-publisher
-      # configs -- not this one.
+      # Trusted Publishing (OIDC). Only ONE PyPI project ships from
+      # this repo -- `pmri`, the base wheel that bundles all ten
+      # subpackage source trees in a single artefact. Command-station
+      # drivers (pmri-nce, pmri-dccex, pmri-lenz, pmri-mrc,
+      # pmri-digitrax) are published from their own repos with their
+      # own trusted-publisher configs; they are NOT touched here.
       id-token: write
       contents: read
+
     steps:
       - name: Check out the release commit
         uses: actions/checkout@v4
@@ -36,30 +35,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build
 
-      - name: Build wheels and sdists for all packages
+      - name: Build the pmri wheel + sdist
         run: |
           mkdir -p dist
-          # 10 base sibling packages, each in its own subdirectory.
-          # The command-station drivers (pmri-nce, pmri-dccex,
-          # pmri-lenz, pmri-mrc, pmri-digitrax) are in separate repos
-          # and published by their own workflows. Order within the
-          # loop doesn't matter: pypi-publish uploads the whole dist/
-          # directory in one batch and dependency resolution only
-          # happens when a later user runs "pip install".
-          for pkg in pmri-core pmri-decoderpro \
-                     pmri-loconet pmri-logixng \
-                     pmri-openlcb pmri-pmri pmri-scripting \
-                     pmri-server pmri-web pmri-withrottle; do
-            echo "::group::Building $pkg"
-            python -m build --outdir dist "$pkg"
-            echo "::endgroup::"
-          done
-          # pmri meta-package lives at the repo root.
-          echo "::group::Building pmri (meta-package)"
           python -m build --outdir dist .
-          echo "::endgroup::"
           echo "Built artefacts:"
           ls -la dist/
 
-      - name: Publish all package distributions to PyPI
+      - name: Publish the pmri distribution to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

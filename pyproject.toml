@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pmri"
 version = "0.1.0"
-description = "PMRI -- Python Model Railroad Interface. Meta-package that installs the full PMRI stack (launcher + web service + hardware drivers)."
+description = "PMRI -- Python Model Railroad Interface. Full base install: launcher + web service + shared infrastructure, bundled as one wheel."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "GPL-2.0-or-later"
@@ -22,42 +22,63 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
-# Pinned to this release. "pip install pmri==0.1.0" installs a
-# known-tested set of 12 wheels: 10 base packages built from this
-# repo (pmri-core .. pmri-withrottle below), plus 2 externally-
-# published command-station drivers (pmri-nce, pmri-dccex) hosted
-# in their own repos. The per-repo OIDC-trusted-publisher constraint
-# forced that split; each driver repo publishes its own wheel
-# independently, versioned in lockstep with this release.
-# pmri-ncemonitor is bundled inside the pmri-nce wheel (one PyPI
-# project, two entry points). Stub driver packages (pmri-lenz,
-# pmri-mrc, pmri-digitrax) are NOT pulled in by the meta-package
-# until their drivers are real; operators needing those install
-# them explicitly ("pip install pmri-digitrax").
+# All runtime dependencies for the base pmri stack, aggregated from
+# the 10 sub-packages that used to be published separately. The
+# pmri wheel contains their code directly (see
+# tool.hatch.build.targets.wheel below); cross-package pmri-* pins
+# are not needed because every module ships inside this one wheel.
+# Command-station DRIVERS (pmri-nce, pmri-dccex, pmri-lenz,
+# pmri-mrc, pmri-digitrax) are plugins installed separately -- they
+# declare pmri as THEIR dependency, not the reverse.
 dependencies = [
-    "pmri-core==0.1.0",
-    "pmri-dccex==0.1.0",
-    "pmri-decoderpro==0.1.0",
-    "pmri-loconet==0.1.0",
-    "pmri-logixng==0.1.0",
-    "pmri-nce==0.1.0",
-    "pmri-openlcb==0.1.0",
-    "pmri-pmri==0.1.0",
-    "pmri-scripting==0.1.0",
-    "pmri-server==0.1.0",
-    "pmri-web==0.1.0",
-    "pmri-withrottle==0.1.0",
+    "bcrypt>=4.1",
+    "customtkinter>=5.2",
+    "fastapi>=0.110",
+    "itsdangerous>=2.1",
+    "jinja2>=3.1",
+    "lxml>=5.2",
+    "pydantic>=2.7",
+    "pyserial>=3.5",
+    "pyserial-asyncio>=0.6",
+    "python-multipart>=0.0.9",
+    "PyYAML>=6.0",
+    "structlog>=24.1",
+    "uvicorn[standard]>=0.27",
 ]
+
+# Operators type "pmri" to launch; pip generates the per-OS wrapper
+# (pmri.exe on Windows, pmri on POSIX) pointing at pmri_pmri.cli:main.
+[project.scripts]
+pmri = "pmri_pmri.cli:main"
+
+# Driver entry points shipped IN THIS wheel. Hardware drivers in
+# separate repos (pmri-nce, pmri-dccex, ...) register their own
+# entries at install time via their own wheels' metadata.
+[project.entry-points."pmri.connection"]
+internal = "pmri_core.hal.internal:InternalConnection"
+loconet = "pmri_loconet:LocoNetConnection"
+openlcb = "pmri_openlcb:OlcbConnection"
 
 [project.urls]
 Homepage = "https://github.com/railmodeler/pmri"
 Issues = "https://github.com/railmodeler/pmri/issues"
 Source = "https://github.com/railmodeler/pmri"
 
-# The meta-package ships a tiny src/pmri/__init__.py whose only role is
-# to make the wheel valid (hatchling requires at least one package to
-# build) and to carry a __version__ string. Operators don't "import
-# pmri" directly -- they run the `pmri` console_scripts wrapper that
-# pmri-pmri provides as a transitive dependency.
+# Bundle 10 source trees into one wheel. Each was its own package in
+# the beta days; the one-PyPI-project constraint collapsed them.
+# Import names stay the same (pmri_core, pmri_pmri, pmri_web, etc.)
+# -- only the PyPI project count changed.
 [tool.hatch.build.targets.wheel]
-packages = ["src/pmri"]
+packages = [
+    "src/pmri",
+    "pmri-core/src/pmri_core",
+    "pmri-decoderpro/src/pmri_decoderpro",
+    "pmri-loconet/src/pmri_loconet",
+    "pmri-logixng/src/pmri_logixng",
+    "pmri-openlcb/src/pmri_openlcb",
+    "pmri-pmri/src/pmri_pmri",
+    "pmri-scripting/src/pmri_scripting",
+    "pmri-server/src/pmri_server",
+    "pmri-web/src/pmri_web",
+    "pmri-withrottle/src/pmri_withrottle",
+]
