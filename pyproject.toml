@@ -22,15 +22,18 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
-# Pinned to this release across the entire sibling set. A "pip install
-# pmri==0.1.0" installs a known-tested set of wheels. pmri-ncemonitor
-# has been merged into pmri-nce (one wheel, two entry points) to keep
-# the PyPI project count aligned with the per-repo OIDC constraint.
-# Command-station drivers (pmri-nce, pmri-dccex) live here as
-# dependencies; stub packages (pmri-lenz, pmri-mrc, pmri-digitrax)
-# are NOT pulled in by the meta-package until their drivers are real.
-# Operators needing those install them explicitly ("pip install
-# pmri-digitrax").
+# Pinned to this release. "pip install pmri==0.1.0" installs a
+# known-tested set of 12 wheels: 10 base packages built from this
+# repo (pmri-core .. pmri-withrottle below), plus 2 externally-
+# published command-station drivers (pmri-nce, pmri-dccex) hosted
+# in their own repos. The per-repo OIDC-trusted-publisher constraint
+# forced that split; each driver repo publishes its own wheel
+# independently, versioned in lockstep with this release.
+# pmri-ncemonitor is bundled inside the pmri-nce wheel (one PyPI
+# project, two entry points). Stub driver packages (pmri-lenz,
+# pmri-mrc, pmri-digitrax) are NOT pulled in by the meta-package
+# until their drivers are real; operators needing those install
+# them explicitly ("pip install pmri-digitrax").
 dependencies = [
     "pmri-core==0.1.0",
     "pmri-dccex==0.1.0",

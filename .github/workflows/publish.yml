@@ -12,9 +12,14 @@ jobs:
       name: pypi
       url: https://pypi.org/p/pmri
     permissions:
-      # Required for Trusted Publishing (OIDC). Each of the 16 PyPI
-      # projects (pmri + 15 pmri-*) needs its own trusted-publisher
-      # entry on pypi.org pointing at this repo / workflow / environment.
+      # Required for Trusted Publishing (OIDC). Each of the 11 PyPI
+      # projects published by THIS workflow (pmri meta + 10 pmri-*
+      # base siblings) needs its own trusted-publisher entry on
+      # pypi.org pointing at this repo / workflow / environment.
+      # The 5 command-station drivers (pmri-nce, pmri-dccex,
+      # pmri-lenz, pmri-mrc, pmri-digitrax) live in separate repos
+      # with their own publish workflows and PyPI trusted-publisher
+      # configs -- not this one.
       id-token: write
       contents: read
     steps:
@@ -34,10 +39,13 @@ jobs:
       - name: Build wheels and sdists for all packages
         run: |
           mkdir -p dist
-          # 15 sibling packages, each in their own subdirectory.
-          # Order within the loop doesn't matter: pypi-publish uploads
-          # the whole dist/ directory in one batch and dependency
-          # resolution only happens when a later user runs "pip install".
+          # 10 base sibling packages, each in its own subdirectory.
+          # The command-station drivers (pmri-nce, pmri-dccex,
+          # pmri-lenz, pmri-mrc, pmri-digitrax) are in separate repos
+          # and published by their own workflows. Order within the
+          # loop doesn't matter: pypi-publish uploads the whole dist/
+          # directory in one batch and dependency resolution only
+          # happens when a later user runs "pip install".
           for pkg in pmri-core pmri-decoderpro \
                      pmri-loconet pmri-logixng \
                      pmri-openlcb pmri-pmri pmri-scripting \
