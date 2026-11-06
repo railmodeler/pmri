@@ -38,9 +38,9 @@ jobs:
           # Order within the loop doesn't matter: pypi-publish uploads
           # the whole dist/ directory in one batch and dependency
           # resolution only happens when a later user runs "pip install".
-          for pkg in pmri-core pmri-dccex pmri-decoderpro pmri-digitrax \
-                     pmri-lenz pmri-loconet pmri-logixng pmri-mrc \
-                     pmri-nce pmri-openlcb pmri-pmri pmri-scripting \
+          for pkg in pmri-core pmri-decoderpro \
+                     pmri-loconet pmri-logixng \
+                     pmri-openlcb pmri-pmri pmri-scripting \
                      pmri-server pmri-web pmri-withrottle; do
             echo "::group::Building $pkg"
             python -m build --outdir dist "$pkg"
