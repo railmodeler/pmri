@@ -10,24 +10,24 @@ pmri is the base engine that includes all the core functions for managing all th
 
 ### Basic Component Overview
 
-pmri-core:
+- pmri-core:
 Handles persistence of all the settings from the various xml files and the connection manager between the command station hardware and the JSON server.
-pmri-server:
+- pmri-server:
 Essentially the JSON server, connecting between pmri-core and pmri-web
-pmri-web:
+- pmri-web:
 Runs the web server and renders the interface, sending request back through pmri-server.pmri-scripting:
 Executes user defined scripts and provides an API interface. In addition, there is a jmri shim that allows for direct execution of existing jython based python scripts. Depending on the script, some modification may be required to work with python 3.x, mostly related to print statement format.
-pmri-decoderpro:
+- pmri-decoderpro:
 decoder programming interface
-pmri-openlcb:
+- pmri-openlcb:
 LCC implementation support
-pmri-logixng:
+- pmri-logixng:
 The logixng support for layout automation.
-pmri-loconet:
+- pmri-loconet:
 The loconet network protocol support
-pmri-withrottle:
+- pmri-withrottle:
 The wifi server for using throttle software on android/ios devices
-pmri-pmri:
+- pmri-pmri:
 The launcher for pmri to configure the settings and start the server and web interface
 
 ## Supported command stations
@@ -38,23 +38,26 @@ The existing release has been fully tested for both operation and decoder progra
 
 ## Installation
 Python 3.12 or later is required. Support for the case statement is necessary.
+---
 To install pmri:
-    pip install pmri
+- pip install pmri
 Installation of command station support:
-    pip install pmri-nce
-    pip install pmri-dccex
+- pip install pmri-nce
+- pip install pmri-dccex
 Note that you can install as many command station plugins as desired. They won't be used unless specfied as the active connection
+---
 Note also, if you do "pip install pmri-nce", it will also automatically install pmri if hasn't been already installed since it is a dependency.
 
 ## Execution
 Once installed:
-    pmri command will launch the gui to set the options and manage the web service.
-    pmri --headless will start the server directly without the pmri launch gui or web server (background operation on a raspberry pi, for example) 
+- pmri command will launch the gui to set the options and manage the web service.
+- pmri --headless will start the server directly without the pmri launch gui or web server (background operation on a raspberry pi, for example) 
 Note:
+---
 Presently, this depends on the decoder and signal xml files from JMRI. These are not currently bundled with pmri. 
 On linux/raspbian, these are normally located here:
-/home/<user>/JMRI/xml/signals
-/home/<user>/JMRI/xml/decoders
+- /home/_user_/JMRI/xml/signals
+- /home/_user_/JMRI/xml/decoders
 On windows: 
-C:\Program Files (x86)\JMRI\xml\decoders
-C:\Program Files (x86)\JMRI\xml\signals
+- C:\Program Files (x86)\JMRI\xml\decoders
+- C:\Program Files (x86)\JMRI\xml\signals
