@@ -37,27 +37,33 @@ There is a hardware plugin for nce (pmri-nce) and dccex (pmri-dccex). There are 
 The existing release has been fully tested for both operation and decoder programming with an NCE PowerPro with a 2006+ eprom and a dccex command station. In addition, withrottle has been fully tested with android and the EngineDriver app. The scripting environment is also debugged. It has been run on Windows11, Linux (ubuntu and mint), and raspbian OS on a raspberry pi 3B.
 
 ## Installation
+
 Python 3.12 or later is required. Support for the case statement is necessary.
----
+
 To install pmri:
 - pip install pmri
+
 Installation of command station support:
 - pip install pmri-nce
 - pip install pmri-dccex
+
 Note that you can install as many command station plugins as desired. They won't be used unless specfied as the active connection
----
+
 Note also, if you do "pip install pmri-nce", it will also automatically install pmri if hasn't been already installed since it is a dependency.
 
 ## Execution
+
 Once installed:
 - pmri command will launch the gui to set the options and manage the web service.
 - pmri --headless will start the server directly without the pmri launch gui or web server (background operation on a raspberry pi, for example) 
+
 Note:
----
 Presently, this depends on the decoder and signal xml files from JMRI. These are not currently bundled with pmri. 
+
 On linux/raspbian, these are normally located here:
 - /home/_user_/JMRI/xml/signals
 - /home/_user_/JMRI/xml/decoders
+
 On windows: 
 - C:\Program Files (x86)\JMRI\xml\decoders
 - C:\Program Files (x86)\JMRI\xml\signals
