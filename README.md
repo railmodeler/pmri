@@ -53,7 +53,16 @@ Note also, if you do "pip install pmri-nce", it will also automatically install 
 
 ## Execution
 
-Once installed:
+Once installed there will be a launcher called pmri created by pip dependent on the platform. 
+
+For windows, a pmri.exe will be located in the user AppData space for the version of python you are using. For example, for python3.13, it would be located here: C:\Users\_user_\AppData\Local\Programs\Python\Python313\Scripts\pmri.exe. At this point, there are two optionsto launch pmri:
+- Right click the desktop, choose "Open in Terminal", then type pmri at the command prompt
+- Create a desktop icon so that you can launch pmri
+-- Open File Explorer and navigate to the directory that contains pmri.exe. Note that AppData is hidden by default, so you may have to enable hidden directories in order to navigate the path.
+-- Right click pmri.exe, "Show more options", "Send To", then choose "Desktop (create shortcut)". You should then see a pmri-shortcut icon on the desktop
+-- Double click the pmri icon to launch the application
+
+For linux/raspbian, a python script is created which can be launched in an xterm:
 - pmri command will launch the gui to set the options and manage the web service.
 - pmri --headless will start the server directly without the pmri launch gui or web server (background operation on a raspberry pi, for example) 
 
