@@ -4,17 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pmri-pmri"
-version = "0.1.1"
+version = "0.1.2"
 description = "PMRI launcher -- unified entry point for the Python Model Railroad Interface web service."
 requires-python = ">=3.12"
 dependencies = [
-    "pmri-core==0.1.1",
-    "pmri-server==0.1.1",
+    "pmri-core==0.1.2",
+    "pmri-server==0.1.2",
     # pmri-web mounts the HTML UI onto pmri-server's JSON API. The
     # launcher's uvicorn target is ``pmri_web:create_app`` so the
     # operator-visible root ``/`` serves pages, not ``{"detail":
     # "Not Found"}``.
-    "pmri-web==0.1.1",
+    "pmri-web==0.1.2",
     "uvicorn[standard]>=0.27",
     "customtkinter>=5.2",
 ]

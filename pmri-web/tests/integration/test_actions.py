@@ -799,11 +799,93 @@ def test_speed_table_expands_into_28_cv_rows(tmp_path) -> None:
             assert f'data-cv="{cv}"' in r.text, f"CV{cv} row missing"
         # Not present past the entries count.
         assert 'data-cv="95"' not in r.text
-        # Human-friendly step labels.
+        # Human-friendly step labels (now in title + aria-label since
+        # the new UI shows them as hover hints rather than inline text).
         assert "Speed Step 1" in r.text
         assert "Speed Step 28" in r.text
         # The 'not yet supported' placeholder must be gone.
         assert "not yet supported" not in r.text
+        # ---- New UI affordances (beta cycle 11/2026) ----
+        # One slider cell per step.
+        assert r.text.count("speed-slider-cell") >= 28
+        # Programming algorithm toolbar is present.
+        assert "speed-table-actions" in r.text
+        for action in (
+            "force-straight", "match-ends", "ratio",
+            "log", "shift-left", "shift-right",
+        ):
+            assert f'data-speed-action="{action}"' in r.text, (
+                f"speed-table action {action!r} button missing"
+            )
+        # Per-cell freeze toggle.
+        assert r.text.count('data-role="speed-freeze"') >= 28
+        # Per-cell current-value readout.
+        assert r.text.count('data-role="speed-value"') >= 28
+
+
+def test_sound_levels_pane_uses_slider_pair_for_numeric_variables(tmp_path) -> None:
+    """Numeric variables on the Sound Levels pane render with a paired
+    ``<input type="range">`` + ``<input type="number">`` widget so the
+    operator can set volumes by either dragging the slider or typing
+    a value. See :func:`pmri_web.routes._decorate_slider_affordance`."""
+    import pathlib  # noqa: PLC0415
+
+    from pmri_core.persistence import Profile  # noqa: PLC0415
+    from pmri_core.persistence.decoder_xml import (  # noqa: PLC0415
+        DecoderFamily, DecoderFile, DecoderModel, DecoderPane, DecoderVariable,
+        VariableKind,
+    )
+    from pmri_core.persistence.programmer_xml import ProgrammerConfig  # noqa: PLC0415
+    from pmri_decoderpro import DecoderCatalog  # noqa: PLC0415
+
+    from pmri_web.app import build_web_app  # noqa: PLC0415
+
+    catalog = DecoderCatalog.from_files([
+        DecoderFile(
+            family=DecoderFamily(
+                name="F", mfg="M", models=[DecoderModel(model="M1")],
+            ),
+            variables=[
+                DecoderVariable.model_validate({
+                    "CV": "177", "item": "Master Volume",
+                    "label": "Master Volume",
+                    "kind": VariableKind.DECIMAL,
+                    "min": "0", "max": "255",
+                }),
+            ],
+        ),
+    ])
+    catalog.programmers["Comprehensive"] = ProgrammerConfig(
+        name="Comprehensive",
+        panes=[DecoderPane(name="Sound Levels", items=["Master Volume"])],
+    )
+    handle = build_web_app()
+    handle.server.ctx._decoder_catalog = catalog      # type: ignore[attr-defined]
+    handle.server.ctx._roster_profile = Profile(      # type: ignore[attr-defined]
+        root=pathlib.Path(tmp_path), name="test",
+    )
+    client = TestClient(handle.app)
+    with client:
+        client.post("/roster/create", data={
+            "id": "L1", "dccAddress": "3", "longAddress": "0",
+            "decoderFamily": "F", "decoderModel": "M1",
+        })
+        r = client.get("/programmer/loco/L1/pane/sound-levels")
+        r.raise_for_status()
+        body = r.text
+        # The paired widget wraps both inputs in a .cv-slider-pair span.
+        assert "cv-slider-pair" in body, (
+            "Sound Levels pane should render slider+entry pair"
+        )
+        # Slider is <input type="range"> with the cv-slider class.
+        assert 'class="cv-slider cv-value-input"' in body
+        # Numeric entry sibling carries cv-slider-entry.
+        assert "cv-slider-entry" in body
+        # Both share the same data-slider-partner id so JS can mirror.
+        assert 'data-slider-partner="cv-177"' in body
+        # Range respects the decoder's declared min/max.
+        assert 'min="0"' in body
+        assert 'max="255"' in body
 
 
 def test_split_datetime_variable_renders_formatted_timestamp(tmp_path) -> None:

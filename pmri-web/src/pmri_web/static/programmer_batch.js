@@ -40,6 +40,181 @@
     return Number.isNaN(n) ? cur : n;
   }
 
+  // ---- Slider-pair + speed-table helpers ---------------------------
+  //
+  // On the audio-heavy panes (Sound Levels, Equalizer, Reverb, DDE,
+  // ASC) and a handful of sound/basic items, the server renders a
+  // paired <input type="range"> + <input type="number"> sharing the
+  // same data-cv. One carries data-slider-partner; the other mirrors
+  // it. A user moving either updates the other without echoing a
+  // second "input" event (we guard via a WeakSet). The dirty tracker
+  // still fires exactly once because the whole thing happens inside
+  // the pane's delegated "input" handler and the companion input's
+  // programmatic .value= assignment doesn't re-dispatch.
+
+  const _syncGuard = new WeakSet();
+
+  function syncSliderPair(input) {
+    // Only act when the changed control is one half of a pair.
+    if (!input || !input.dataset || !input.dataset.sliderPartner) return;
+    if (_syncGuard.has(input)) return;
+    const pair = input.closest(".cv-slider-pair");
+    if (!pair) return;
+    _syncGuard.add(input);
+    try {
+      // Pair has exactly two inputs with matching data-slider-partner;
+      // the "other" one is whichever isn't the event target.
+      const partners = pair.querySelectorAll(
+        "input[data-slider-partner='" + input.dataset.sliderPartner + "']",
+      );
+      partners.forEach((partner) => {
+        if (partner === input) return;
+        if (partner.value === input.value) return;
+        partner.value = input.value;
+      });
+    } finally {
+      _syncGuard.delete(input);
+    }
+  }
+
+  function syncSpeedSliderReadout(input) {
+    // Speed-table sliders don't have a numeric entry partner --
+    // their current value is shown in the readout above the slider.
+    if (!input || !input.classList.contains("speed-slider")) return;
+    const cell = input.closest(".speed-slider-cell");
+    if (!cell) return;
+    const readout = cell.querySelector("[data-role='speed-value']");
+    if (readout) readout.textContent = input.value;
+  }
+
+  function collectSpeedSliders(pane) {
+    // Returns the ordered list of {cell, slider, frozen, value} for
+    // the speed table in *pane*, in step order (left-to-right).
+    const cells = pane.querySelectorAll(".speed-slider-cell");
+    const out = [];
+    cells.forEach((cell) => {
+      const slider = cell.querySelector(".speed-slider");
+      const freeze = cell.querySelector("[data-role='speed-freeze']");
+      if (!slider) return;
+      out.push({
+        cell,
+        slider,
+        frozen: freeze ? !!freeze.checked : false,
+        value: parseInt(slider.value, 10) || 0,
+      });
+    });
+    return out;
+  }
+
+  function setSpeedSliderValue(step, newValue) {
+    // Clamp to 0..255 (the NMRA speed-step CV range) and short-circuit
+    // writes to frozen sliders. Updates the slider, the readout, and
+    // fires an "input" event so the pane's dirty tracker marks the
+    // row changed.
+    if (step.frozen) return;
+    let v = Math.round(newValue);
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    if (step.slider.value === String(v)) return;
+    step.slider.value = String(v);
+    const readout = step.cell.querySelector("[data-role='speed-value']");
+    if (readout) readout.textContent = String(v);
+    step.slider.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function runSpeedTableAction(pane, action) {
+    // Port of JMRI Java SpeedTableVarValue.doXxx. The source tree is
+    // at ~/Documents/jmri.jar.src/jmri/jmrit/symbolicprog/SpeedTableVarValue.java
+    // -- see doForceStraight, doMatchEnds, doRatioCurve, doLogCurve,
+    // doShiftLeft, doShiftRight. The frozen flag is a PMRI addition;
+    // JMRI's panel edits every cell unconditionally.
+    const steps = collectSpeedSliders(pane);
+    const n = steps.length;
+    if (n < 2) return;
+
+    switch (action) {
+      case "force-straight": {
+        // JMRI: cv[0]=min, cv[n-1]=max, then doMatchEnds (linear from
+        // first to last). Here we honour freeze so a locked endpoint
+        // keeps its anchor.
+        setSpeedSliderValue(steps[0], 0);
+        setSpeedSliderValue(steps[n - 1], 255);
+        const first = steps[0].value;
+        const last = steps[n - 1].value;
+        for (let i = 0; i < n; i++) {
+          const v = first + (i * (last - first)) / (n - 1);
+          setSpeedSliderValue(steps[i], v);
+        }
+        break;
+      }
+      case "match-ends": {
+        // Linear interpolation across every step from first slider's
+        // value to last slider's value.
+        const first = steps[0].value;
+        const last = steps[n - 1].value;
+        for (let i = 0; i < n; i++) {
+          const v = first + (i * (last - first)) / (n - 1);
+          setSpeedSliderValue(steps[i], v);
+        }
+        break;
+      }
+      case "ratio": {
+        // Exponential curve first -> last. floor(first * exp(step*i))
+        // where step = ln(last/first) / (n-1). Clamp first to >= 1
+        // (log of 0 is undefined) and last to >= first+1 so the curve
+        // slopes upward.
+        let first = steps[0].value;
+        let last = steps[n - 1].value;
+        if (first < 1) first = 1;
+        if (last < first + 1) last = first + 1;
+        const stepLn = Math.log(last / first) / (n - 1);
+        for (let i = 0; i < n; i++) {
+          const v = Math.floor(first * Math.exp(stepLn * i));
+          setSpeedSliderValue(steps[i], v);
+        }
+        break;
+      }
+      case "log": {
+        // JMRI's logarithmic curve shape. factor=0.1 by convention;
+        // see doLogCurve in the Java source. Produces an S-shaped curve
+        // that starts fast and tapers.
+        let first = steps[0].value;
+        const last = steps[n - 1].value < first + 1 ? first + 1 : steps[n - 1].value;
+        const factor = 0.1;
+        const ratio = Math.pow(1 - factor, n - 1);
+        const limit = last + (last - first) * ratio;
+        // Index 0 stays at first by convention (JMRI's code skips i=0
+        // in the loop, keeping cv[0] untouched).
+        for (let i = 1; i < n; i++) {
+          const previous =
+            limit - ((limit - first) * ratio) / Math.pow(1 - factor, n - 1 - i);
+          setSpeedSliderValue(steps[i], Math.floor(previous));
+        }
+        break;
+      }
+      case "shift-left": {
+        // cv[i] = cv[i+1] for i=0..n-2; last cell unchanged. JMRI does
+        // the same thing. We read all values up front so a frozen cell
+        // in the middle doesn't corrupt the shift chain (its value
+        // still propagates to the slot on its left).
+        const values = steps.map((s) => s.value);
+        for (let i = 0; i < n - 1; i++) {
+          setSpeedSliderValue(steps[i], values[i + 1]);
+        }
+        break;
+      }
+      case "shift-right": {
+        const values = steps.map((s) => s.value);
+        for (let i = n - 1; i >= 1; i--) {
+          setSpeedSliderValue(steps[i], values[i - 1]);
+        }
+        break;
+      }
+      default:
+        return;
+    }
+  }
+
   function readInputValue(input) {
     if (!input) return null;
     if (input.type === "checkbox") {
@@ -812,14 +987,36 @@
     pane.addEventListener("input", (evt) => {
       const input = evt.target.closest(".cv-value-input");
       if (!input) return;
+      syncSliderPair(input);
+      syncSpeedSliderReadout(input);
       const row = input.closest("[data-item]");
       if (row) updateRowDirtyState(row);
     });
     pane.addEventListener("change", (evt) => {
       const input = evt.target.closest(".cv-value-input");
       if (!input) return;
+      syncSliderPair(input);
+      syncSpeedSliderReadout(input);
       const row = input.closest("[data-item]");
       if (row) updateRowDirtyState(row);
+    });
+
+    // Speed-table algorithm buttons (Force Straight / Match Ends / ...).
+    // Delegated so the handlers survive HTMX pane swaps.
+    pane.addEventListener("click", (evt) => {
+      const actionBtn = evt.target.closest("[data-speed-action]");
+      if (!actionBtn) return;
+      runSpeedTableAction(pane, actionBtn.dataset.speedAction);
+    });
+
+    // Freeze checkbox → toggle .frozen class on the cell for styling
+    // feedback. The algorithm handlers read dataset.speedFreeze via
+    // the checkbox's own checked state.
+    pane.addEventListener("change", (evt) => {
+      const cb = evt.target.closest("[data-role='speed-freeze']");
+      if (!cb) return;
+      const cell = cb.closest(".speed-slider-cell");
+      if (cell) cell.classList.toggle("frozen", cb.checked);
     });
 
     // Per-row Read / Write buttons — delegated so re-rendered rows

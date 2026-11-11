@@ -187,6 +187,24 @@
             </option>
             {% endfor %}
           </select>
+        {%- elif row.use_slider -%}
+          {%- if not label_suppressed and row.label -%}
+            <span class="grid-widget-label">{{ row.label | safe }}</span>
+          {%- endif -%}
+          <span class="cv-slider-pair" data-pair="cv-{{ row.cv }}">
+            <input type="range" class="cv-slider cv-value-input"
+                   data-cv="{{ row.cv }}"
+                   data-slider-partner="cv-{{ row.cv }}"
+                   min="{{ row.slider_min }}" max="{{ row.slider_max }}"
+                   value="{{ row.current_value if row.current_value is not none else row.slider_min }}"
+                   {% if row.read_only %}disabled{% endif %} />
+            <input type="number" class="cv-value-input cv-slider-entry"
+                   data-cv="{{ row.cv }}"
+                   data-slider-partner="cv-{{ row.cv }}"
+                   min="{{ row.slider_min }}" max="{{ row.slider_max }}"
+                   value="{{ row.current_value if row.current_value is not none else '' }}"
+                   {% if row.read_only %}disabled{% endif %} />
+          </span>
         {%- else -%}
           {%- if not label_suppressed and row.label -%}
             <span class="grid-widget-label">{{ row.label | safe }}</span>
@@ -312,6 +330,25 @@
                    ``routes._format_split_datetime``. #}
                 <span class="mono" title="raw: {{ row.current_value if row.current_value is not none else '--' }}"
                       >{{ row.datetime_display or '--' }}</span>
+              {% elif row.use_slider %}
+                {# Paired slider + number entry. Both carry
+                   data-cv so the batch dirty tracker can pick either
+                   one up; programmer_batch.js keeps them in sync by
+                   mirroring input events between the pair. #}
+                <span class="cv-slider-pair" data-pair="cv-{{ row.cv }}">
+                  <input type="range" class="cv-slider cv-value-input"
+                         data-cv="{{ row.cv }}"
+                         data-slider-partner="cv-{{ row.cv }}"
+                         min="{{ row.slider_min }}" max="{{ row.slider_max }}"
+                         value="{{ row.current_value if row.current_value is not none else row.slider_min }}"
+                         {% if row.read_only %}disabled{% endif %} />
+                  <input type="number" class="cv-value-input cv-slider-entry"
+                         data-cv="{{ row.cv }}"
+                         data-slider-partner="cv-{{ row.cv }}"
+                         min="{{ row.slider_min }}" max="{{ row.slider_max }}"
+                         value="{{ row.current_value if row.current_value is not none else '' }}"
+                         {% if row.read_only %}disabled{% endif %} />
+                </span>
               {% else %}
                 <input type="number" class="cv-value-input"
                        data-cv="{{ row.cv }}"
@@ -341,43 +378,69 @@
     </div>
     {% endif %}
 
-    {# ----- Speed Table pane: 28 step rows (still tabular for now) ----- #}
+    {# ----- Speed Table pane: vertical sliders per step ----- #}
+    {# JMRI's SpeedTableVarValue panel ports to a row of vertical
+       sliders -- one per NMRA speed step (CV67..CV94 for a 28-step
+       table). Each slider is paired with a readout at the top and
+       a freeze checkbox at the bottom; the Programming Algorithms
+       row applies Match Ends / Force Straight / Ratio / Log / Shift
+       to the un-frozen sliders. See programmer_batch.js for the
+       algorithm implementations (ported from JMRI Java). #}
     {% if variable_rows and is_speed_table_pane %}
     <h4>Speed table</h4>
-    <table class="cv-variables">
-      <thead>
-        <tr>
-          <th>Step</th><th>CV</th><th>Stored value</th><th>New value</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in variable_rows %}
-        {% if row.kind == "decimal" and row.item.startswith("Speed Table[") %}
-        <tr data-item="{{ row.item }}"
-            data-cv="{{ row.cv }}"
-            data-kind="{{ row.kind }}"
-            data-current="{{ row.current_value if row.current_value is not none else '' }}">
-          <td>{{ row.label or row.item }}</td>
-          <td class="mono">{{ row.cv_display }}</td>
-          <td class="mono" data-role="stored">
-            {% if row.current_value is none %}<span class="muted">—</span>
-            {% else %}{{ row.current_value }}{% endif %}
-          </td>
-          <td>
-            <input type="number" class="cv-value-input"
-                   data-cv="{{ row.cv }}"
-                   min="0" max="255"
-                   value="{{ row.current_value if row.current_value is not none else '' }}" />
-          </td>
-          <td class="row" style="gap:0.25rem">
-            <button type="button" class="row-read-btn">Read</button>
-            <span class="row-read-status" data-role="row-read-status"></span>
-          </td>
-        </tr>
-        {% endif %}
+    {%- set speed_rows = [] -%}
+    {%- for row in variable_rows -%}
+      {%- if row.kind == "decimal" and row.item.startswith("Speed Table[") -%}
+        {{- speed_rows.append(row) or "" -}}
+      {%- endif -%}
+    {%- endfor -%}
+    {% if speed_rows %}
+    <div class="speed-table-panel" data-step-count="{{ speed_rows | length }}">
+      <div class="speed-table-actions">
+        <span class="muted small">Programming algorithms (apply to un-frozen sliders):</span>
+        <button type="button" data-speed-action="force-straight">Force Straight</button>
+        <button type="button" data-speed-action="match-ends">Match Ends</button>
+        <button type="button" data-speed-action="ratio">Constant Ratio Curve</button>
+        <button type="button" data-speed-action="log">Log Curve</button>
+        <button type="button" data-speed-action="shift-left">Shift Left</button>
+        <button type="button" data-speed-action="shift-right">Shift Right</button>
+      </div>
+      <div class="speed-slider-row">
+        {% for row in speed_rows %}
+          {%- set step_idx = loop.index0 -%}
+          {%- set cur_val = row.current_value if row.current_value is not none else 0 -%}
+          <div class="speed-slider-cell"
+               title="{{ row.label or row.item }} (CV{{ row.cv_display }})"
+               data-item="{{ row.item }}"
+               data-cv="{{ row.cv }}"
+               data-kind="{{ row.kind }}"
+               data-step="{{ step_idx }}"
+               data-current="{{ row.current_value if row.current_value is not none else '' }}">
+            <div class="speed-slider-value" data-role="speed-value">{{ cur_val }}</div>
+            <div class="speed-slider-wrap">
+              <input type="range" class="cv-value-input speed-slider"
+                     aria-label="{{ row.label or row.item }}"
+                     data-cv="{{ row.cv }}"
+                     min="0" max="255"
+                     value="{{ cur_val }}" />
+            </div>
+            <div class="speed-slider-step mono muted"
+                 title="{{ row.label or row.item }}">{{ loop.index }}</div>
+            <label class="speed-slider-freeze"
+                   title="Freeze this step while running algorithms on the others">
+              <input type="checkbox" data-role="speed-freeze" />
+              <span>freeze</span>
+            </label>
+          </div>
         {% endfor %}
-      </tbody>
-    </table>
+      </div>
+      <p class="muted small" style="margin-top:0.5rem">
+        Frozen sliders are not modified by the algorithm buttons but
+        still contribute their current value where the algorithm reads
+        from (e.g. first/last for Match Ends and Ratio).
+      </p>
+    </div>
+    {% endif %}
     {% endif %}
 
     {# ----- Raw CV table (CVs pane) ----- #}

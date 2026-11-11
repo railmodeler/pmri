@@ -383,7 +383,15 @@ table.cv-variables th, table.cv-variables td {
 .pane-widget-actions {
     flex: 0 0 auto;
     display: grid;
-    grid-template-columns: 7em 9em auto auto;
+    /* The input column is 16em so slider-pair widgets (used on the
+       audio-mix panes and Start Voltage) get ~11em of slider travel
+       after the fixed 4.5em numeric entry. Prior 9em column gave only
+       ~4em of slider width, which on a 0..255 range meant one pixel of
+       pointer motion jumped 7-8 CV units; 16em brings per-pixel
+       resolution to roughly 2-3. Non-slider widgets (plain number
+       inputs, enum selects) get the extra room too, which is
+       harmless and reads better. */
+    grid-template-columns: 7em 16em auto auto;
     align-items: center;
     gap: 0.5rem;
     justify-items: end;
@@ -549,4 +557,139 @@ table.cv-variables th, table.cv-variables td {
 .fnmap-check {
     cursor: pointer;
     margin: 0;
+}
+
+/* ---- CV slider-pair (sound/levels/equalizer/reverb/dde/asc etc.) ---- */
+/* The pair is a flex row filling its allotted grid cell. The slider
+   shrinks to zero when the cell gets narrow (min-width: 0 defeats
+   flexbox's implicit min-content size); the numeric entry stays at
+   a fixed 4.5em. The parent ``.pane-widget-input input { width: 100% }``
+   rule still applies to the number entry, so we override it with the
+   explicit width rule below. */
+.cv-slider-pair {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+.pane-widget-input .cv-slider-pair input,
+.grid-widget .cv-slider-pair input {
+    /* Undo the global 100% so the pair's flex basis wins. */
+    width: auto;
+}
+.cv-slider {
+    flex: 1 1 0;
+    min-width: 0;
+    accent-color: var(--accent, #4a7bbd);
+}
+.cv-slider-entry {
+    flex: 0 0 4.5em;
+    width: 4.5em !important;
+    text-align: right;
+    box-sizing: border-box;
+}
+
+/* ---- Speed Table panel (vertical sliders) ---- */
+.speed-table-panel {
+    display: block;
+    margin-top: 0.5rem;
+}
+.speed-table-actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 0.4rem 0.5rem;
+    background: color-mix(in srgb, var(--panel, #222) 70%, transparent);
+    border: 1px solid var(--border, #444);
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+}
+.speed-table-actions button {
+    font-size: 0.85rem;
+    padding: 0.2rem 0.6rem;
+}
+.speed-slider-row {
+    display: flex;
+    gap: 0.25rem;
+    align-items: flex-end;
+    overflow-x: auto;
+    padding: 0.5rem 0;
+}
+.speed-slider-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 0.2rem;
+}
+.speed-slider-cell.dirty .speed-slider-value {
+    color: var(--warn, #d0b000);
+    font-weight: 600;
+}
+.speed-slider-value {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    min-width: 2.5em;
+    text-align: center;
+    padding: 0.1rem 0.25rem;
+    background: color-mix(in srgb, var(--panel, #222) 85%, transparent);
+    border-radius: 3px;
+}
+/* Real vertical slider via ``writing-mode: vertical-lr`` -- the modern
+   web-standard way (Chrome 125+, Safari 17.4+, Firefox 139+). Keeps
+   the input's underlying value-to-pixel mapping on the correct axis,
+   unlike ``transform: rotate(-90deg)`` which only rotates the paint
+   output and leaves the hit region horizontal. ``direction: rtl``
+   puts the maximum at the TOP of the slider so dragging up increases
+   the value (matching a volume slider's affordance). */
+/* Height is 16em (~256 CSS px at the default root font size), so each
+   step of the 0..255 range maps to roughly one pixel of pointer
+   motion -- previously 9em gave ~7-8 per-pixel jumps on the Pi. The
+   taller slider still fits a 1366x768 Pi display with the pane
+   header, speed-table actions row, and freeze toggles visible. */
+.speed-slider-wrap {
+    width: 1.8em;
+    height: 16em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.speed-slider {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 1.5em;
+    height: 16em;
+    padding: 0;
+    accent-color: var(--accent, #4a7bbd);
+}
+/* Override ``.pane-widget-input input { width: 100% }`` which would
+   otherwise stretch the vertical slider sideways and swallow neighbours. */
+.pane-widget-input .speed-slider,
+.grid-widget .speed-slider,
+.speed-slider-wrap .speed-slider {
+    width: 1.5em;
+    height: 16em;
+}
+.speed-slider-step {
+    font-size: 0.75rem;
+}
+.speed-slider-freeze {
+    font-size: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+.speed-slider-freeze input {
+    margin: 0;
+}
+.speed-slider-cell.frozen .speed-slider {
+    accent-color: var(--muted, #888);
+}
+.speed-slider-cell.frozen .speed-slider-value {
+    text-decoration: underline;
 }

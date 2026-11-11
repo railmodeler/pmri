@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pmri-openlcb"
-version = "0.1.1"
+version = "0.1.2"
 description = "OpenLCB/LCC driver for the JMRI Python rewrite (Stage 6)."
 requires-python = ">=3.12"
 license = "GPL-2.0-or-later"
 dependencies = [
-    "pmri-core==0.1.1",
+    "pmri-core==0.1.2",
     "pyserial-asyncio>=0.6",
 ]
 

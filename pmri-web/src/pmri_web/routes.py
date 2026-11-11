@@ -198,6 +198,114 @@ def _variable_qualifiers_pass(
     return True
 
 
+# ---- slider-affordance config -----------------------------------------
+#
+# Which panes / variables get a paired slider widget alongside their
+# numeric entry. Pure UI convenience -- the wire format is unchanged.
+# Panes in :data:`_SLIDER_PANES_ALL` apply the slider to every numeric
+# (decimal/hexadecimal) non-read-only variable they carry. Other panes
+# opt specific variables in via the per-pane label lists.
+#
+# Slug matching is case-insensitive against the composed pane's slug
+# (derived from its ``<name>`` by the pane walker); label matching is
+# ``substring in lowered-label``, so a decoder that writes
+# "Engine Exhaust Rate" instead of "Engine Exhaust Control" still
+# surfaces the slider.
+
+_SLIDER_PANES_ALL: frozenset[str] = frozenset({
+    "sound-levels",
+    "equalizer",
+    "reverb",
+    "dde",
+    "dynamic-digital-exhaust",
+    "asc",
+    "audio-signal-chain",
+})
+_SLIDER_SOUND_LABEL_HINTS: tuple[str, ...] = (
+    "engine exhaust",
+    "bell ring",
+    "quiet mode",
+)
+_SLIDER_BASIC_LABEL_HINTS: tuple[str, ...] = (
+    "start voltage",
+    "vstart",
+)
+
+
+def _row_slider_bounds(var: Any, wire_max: int) -> tuple[int, int]:
+    """Resolve a variable's slider range to a (min, max) int pair.
+
+    Falls back to ``(0, wire_max)`` when the decoder XML didn't carry
+    ``min``/``max`` attributes or they didn't parse as ints. The
+    non-fallback path honours the decoder's declared range so an
+    audio CV limited to e.g. 0..15 doesn't present a slider that
+    runs to 255.
+    """
+    try:
+        lo = int(var.min) if var.min not in (None, "") else 0
+    except (TypeError, ValueError):
+        lo = 0
+    try:
+        hi = int(var.max) if var.max not in (None, "") else wire_max
+    except (TypeError, ValueError):
+        hi = wire_max
+    hi = max(hi, lo)
+    return lo, hi
+
+
+def _decorate_slider_affordance(
+    rows: list[dict[str, Any]],
+    composed_pane: Any,
+    by_item: dict[str, Any],
+) -> None:
+    """Mutate *rows* in place, adding ``use_slider``/``slider_min``/
+    ``slider_max`` fields per variable.
+
+    Decision table (first match wins):
+
+    * Row isn't numeric (kind != decimal/hexadecimal) OR is read-only:
+      ``use_slider = False``. Sliders only make sense for continuous
+      editable ranges.
+    * Pane slug matches :data:`_SLIDER_PANES_ALL`: every eligible row
+      gets a slider.
+    * Pane is "sound" or "basic": only rows whose label matches one
+      of the per-pane hints get a slider.
+    * Otherwise: no slider.
+
+    Slider bounds come from :func:`_row_slider_bounds`.
+    """
+    slug = (getattr(composed_pane, "slug", "") or "").lower()
+    pane_wide = slug in _SLIDER_PANES_ALL
+    for row in rows:
+        kind = row.get("kind")
+        if kind not in ("decimal", "hexadecimal"):
+            continue
+        if row.get("read_only"):
+            continue
+        label = (row.get("label") or row.get("item") or "").lower()
+        if pane_wide:
+            use = True
+        elif slug == "sound":
+            use = any(h in label for h in _SLIDER_SOUND_LABEL_HINTS)
+        elif slug == "basic":
+            use = any(h in label for h in _SLIDER_BASIC_LABEL_HINTS)
+        else:
+            use = False
+        if not use:
+            continue
+        # Look up the decoder variable for min/max; speed-table pseudo-
+        # rows (synthesized by _build_speed_table_rows) aren't in
+        # ``by_item`` and are handled by the speed-table template path,
+        # not this slider-pair path.
+        var = by_item.get(row.get("item", ""))
+        if var is None:
+            continue
+        lo, hi = _row_slider_bounds(var, row.get("wire_max") or 255)
+        row["use_slider"] = True
+        row["slider_min"] = lo
+        row["slider_max"] = hi
+
+
 def _panel_xml_bytes(ctx: Any, name: str) -> bytes | None:
     """Return the raw XML for a profile-stored panel, or None.
 
@@ -1882,6 +1990,17 @@ def install_template_routes(
                 except (TypeError, ValueError):
                     return 0
             rows.sort(key=_cv_sort_key)
+
+        # UI-affordance decoration: for a curated set of panes (sound
+        # mixing, equalizer, reverb, DDE, ASC) and specific slow-dial
+        # variables (Start Voltage, engine exhaust rate, ...) we render
+        # a paired slider next to the numeric entry. The slider is a
+        # user-interface nicety -- same wire format, same dirty tracking;
+        # the template branches on ``row["use_slider"]``. Decided here,
+        # not in the template, because the decision looks at pane slug
+        # + variable label + the decoder's declared min/max which the
+        # pane layer already has resolved.
+        _decorate_slider_affordance(rows, composed_pane, by_item)
 
         # Raw CV table (CVs pane) -- enumerate every CV the decoder
         # defines, merged with whatever's been read/written into the

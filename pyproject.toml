@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pmri"
-version = "0.1.1"
+version = "0.1.2"
 description = "PMRI -- Python Model Railroad Interface. Full base install: launcher + web service + shared infrastructure, bundled as one wheel."
 readme = "README.md"
 requires-python = ">=3.12"
