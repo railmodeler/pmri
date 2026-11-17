@@ -98,6 +98,143 @@ def test_panels_svg_endpoint_returns_image_media_type(handle_with_panel) -> None
         assert r.text.startswith("<svg")
 
 
+# ---- /panels/{name}/model and /panels/{name}/edit ----------------------
+
+
+_LAYOUT_PANEL_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<layout-config>'
+    '<LayoutEditor name="Main" panelwidth="800" panelheight="600">'
+    '<positionablepoint ident="A" x="10" y="10"/>'
+    '<positionablepoint ident="B" x="90" y="10"/>'
+    '<tracksegment ident="S1" connect1name="A" connect2name="B"'
+    ' type1="POS_POINT" type2="POS_POINT" mainline="yes">'
+    '<blockname>IB1</blockname></tracksegment>'
+    '</LayoutEditor>'
+    '</layout-config>'
+).encode()
+
+
+@pytest.fixture()
+def handle_with_layout_panel(tmp_path: pathlib.Path):
+    profile = Profile(root=tmp_path, name="dev")
+    profile.ensure()
+    panels_dir = profile.profile_dir / "panels"
+    panels_dir.mkdir(parents=True, exist_ok=True)
+    (panels_dir / "Main.xml").write_bytes(_LAYOUT_PANEL_XML)
+    handle = build_web_app()
+    handle.server.ctx._roster_profile = profile      # type: ignore[attr-defined]
+    handle.server.ctx._panels_dir = panels_dir       # type: ignore[attr-defined]
+    return handle
+
+
+def test_panels_model_returns_json(handle_with_layout_panel) -> None:
+    with TestClient(handle_with_layout_panel.app) as tc:
+        r = tc.get("/panels/Main/model")
+        r.raise_for_status()
+        data = r.json()
+        assert data["name"] == "Main"
+        assert data["width"] == 800
+        assert data["height"] == 600
+        assert len(data["points"]) == 2
+        assert data["points"][0]["ident"] == "A"
+        assert len(data["segments"]) == 1
+        seg = data["segments"][0]
+        assert seg["ident"] == "S1"
+        assert seg["c1"]["ref"] == "A"
+        assert seg["mainline"] is True
+        assert seg["block"] == "IB1"
+
+
+def test_panels_edit_page_renders_canvas_chrome(
+    handle_with_layout_panel,
+) -> None:
+    with TestClient(handle_with_layout_panel.app) as tc:
+        r = tc.get("/panels/Main/edit")
+        r.raise_for_status()
+        body = r.text
+        assert 'class="panel-editor-shell"' in body
+        assert 'data-panel="Main"' in body
+        assert 'data-role="canvas"' in body
+        assert '/static/panel_canvas.js' in body
+
+
+def test_panels_model_404_on_missing(handle_with_layout_panel) -> None:
+    with TestClient(handle_with_layout_panel.app) as tc:
+        r = tc.get("/panels/nope/model")
+        assert r.status_code == 404
+
+
+def test_layout_config_wrapped_panel_lists_in_profile(
+    handle_with_layout_panel,
+) -> None:
+    """A ``<layout-config>``-wrapped ``<LayoutEditor>`` (the shape JMRI
+    writes and the shape our ``/panel/create`` route writes) must show
+    up in the panel listing. Regression for the earlier filter that
+    only matched bare-rooted editor elements."""
+    with TestClient(handle_with_layout_panel.app) as tc:
+        r = tc.get("/panel")
+        r.raise_for_status()
+        assert 'href="/panels/Main/edit"' in r.text
+
+
+def test_panel_create_then_delete_round_trip(tmp_path: pathlib.Path) -> None:
+    """End-to-end: create a blank panel via /panel/create, confirm it
+    appears in the list, then delete it via /panel/delete. The delete
+    also sweeps rolling-backup siblings."""
+    profile = Profile(root=tmp_path, name="dev")
+    profile.ensure()
+    panels_dir = profile.profile_dir / "panels"
+    handle = build_web_app()
+    handle.server.ctx._roster_profile = profile      # type: ignore[attr-defined]
+    with TestClient(handle.app, follow_redirects=False) as tc:
+        # Create.
+        r = tc.post("/panel/create", data={
+            "name": "Yard", "width": "800", "height": "600",
+        })
+        assert r.status_code == 303
+        assert r.headers["location"] == "/panels/Yard/edit"
+        # Listing shows it.
+        r = tc.get("/panel")
+        r.raise_for_status()
+        assert "/panels/Yard/edit" in r.text
+        # Simulate a rolling backup sibling landing from a prior edit.
+        (panels_dir / "Yard.xml.bak").write_text("<x/>", encoding="utf-8")
+        # Delete.
+        r = tc.post("/panel/delete", data={"name": "Yard"})
+        assert r.status_code == 303
+        assert "deleted=Yard" in r.headers["location"]
+    assert not (panels_dir / "Yard.xml").exists()
+    assert not (panels_dir / "Yard.xml.bak").exists()
+
+
+def test_panel_delete_missing_redirects_with_marker(
+    tmp_path: pathlib.Path,
+) -> None:
+    profile = Profile(root=tmp_path, name="dev")
+    profile.ensure()
+    handle = build_web_app()
+    handle.server.ctx._roster_profile = profile      # type: ignore[attr-defined]
+    with TestClient(handle.app, follow_redirects=False) as tc:
+        r = tc.post("/panel/delete", data={"name": "ghost"})
+        assert r.status_code == 303
+        assert "err=missing" in r.headers["location"]
+
+
+def test_panel_create_name_collision_redirects_with_marker(
+    tmp_path: pathlib.Path,
+) -> None:
+    profile = Profile(root=tmp_path, name="dev")
+    profile.ensure()
+    handle = build_web_app()
+    handle.server.ctx._roster_profile = profile      # type: ignore[attr-defined]
+    with TestClient(handle.app, follow_redirects=False) as tc:
+        tc.post("/panel/create", data={"name": "A"})
+        r = tc.post("/panel/create", data={"name": "A"})
+        assert r.status_code == 303
+        assert "err=exists" in r.headers["location"]
+
+
 # ---- /panel home ---------------------------------------------------------
 
 

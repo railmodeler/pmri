@@ -36,50 +36,74 @@ _TYPE_BY_ROOT = {
 
 
 def _panels_dir(ctx: Any) -> pathlib.Path | None:
-    """Locate the active profile's panels dir, if any.
+    """Locate where panel XML files live for the active profile.
 
-    Falls back through:
+    Walks fallback sources in priority order:
     * ``ctx._panels_dir`` (test hook -- lets integration tests point at
       a temp directory);
     * ``ctx.config_store.profile.panels_dir`` (production path once
       the ConfigStore's profile is attached);
+    * ``ctx._roster_profile.profile_dir / "panels"`` (web layer's roster
+      profile, used when the full ConfigStore isn't wired);
     * ``Profile.default().panels_dir`` (last-resort default).
 
-    Returns ``None`` if none of those resolve to an existing directory
-    -- callers treat that as "no panels" rather than an error.
+    Returns the first configured path even if the directory doesn't
+    exist on disk yet -- callers that WRITE panels (``panel-edit``'s
+    create path, the ``/panel/create`` route) mkdir before writing;
+    callers that READ (``PanelService.list``, ``_panel_xml_bytes``)
+    handle a non-existent path gracefully. Returns ``None`` only when
+    no profile is known at all.
     """
+    import pathlib    # local import so module header stays unchanged
+
     override = getattr(ctx, "_panels_dir", None)
     if isinstance(override, (str, pathlib.Path)):
-        p = pathlib.Path(override)
-        if p.is_dir():
-            return p
+        return pathlib.Path(override)
 
     store = getattr(ctx, "config_store", None)
     profile = getattr(store, "profile", None) if store is not None else None
     if profile is not None:
         panels = getattr(profile, "panels_dir", None)
-        if isinstance(panels, pathlib.Path) and panels.is_dir():
+        if isinstance(panels, pathlib.Path):
             return panels
+
+    roster_profile = getattr(ctx, "_roster_profile", None)
+    if roster_profile is not None:
+        profile_dir = getattr(roster_profile, "profile_dir", None)
+        if profile_dir is not None:
+            return pathlib.Path(profile_dir) / "panels"
 
     try:
         from pmri_core.persistence.profile import Profile  # noqa: PLC0415
     except ImportError:
         return None
     default = getattr(Profile.default(), "panels_dir", None)
-    if isinstance(default, pathlib.Path) and default.is_dir():
+    if isinstance(default, pathlib.Path):
         return default
     return None
 
 
 def _guess_panel_type(path: pathlib.Path) -> str | None:
-    """Peek at the root element of a panel XML file. Returns one of the
-    four schema types, or ``None`` if the root isn't a recognized
-    panel-editor root."""
+    """Peek at the first panel-editor element inside a panel XML file.
+
+    Real JMRI panel files are ``<layout-config>``-rooted with the actual
+    editor element as a child (``<LayoutEditor>``, ``<PanelEditor>``,
+    etc.). Bare ``<LayoutEditor>``-rooted files also exist (older
+    exports, test fixtures). Walk the ``start`` events until we find a
+    recognised editor element; stop walking so we don't pay to parse
+    the whole file.
+    """
     try:
-        # ``iterparse`` doesn't need the whole file -- we bail after the
-        # first "start" event.
+        depth = 0
         for _event, elem in ET.iterparse(path, events=("start",)):
-            return _TYPE_BY_ROOT.get(elem.tag)
+            ptype = _TYPE_BY_ROOT.get(elem.tag)
+            if ptype is not None:
+                return ptype
+            depth += 1
+            # Give up after a few elements so we don't scan a whole
+            # unrelated XML file looking for a hit.
+            if depth > 4:
+                return None
     except (ET.ParseError, OSError):
         return None
     return None

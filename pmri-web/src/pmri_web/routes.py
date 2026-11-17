@@ -311,27 +311,18 @@ def _panel_xml_bytes(ctx: Any, name: str) -> bytes | None:
 
     Shares the resolver with :class:`~pmri_server.services.panel.PanelService`
     (``_panels_dir``) so uploads via the JSON API, listings on /panel,
-    and SVG renders on /panels/{name} all see the same directory on
-    disk. *name* is treated as a filesystem basename; path separators
-    and traversal segments are rejected before touching the FS.
+    and SVG / canvas renders on /panels/{name}[/edit] all see the same
+    directory on disk. *name* is treated as a filesystem basename;
+    path separators and traversal segments are rejected before touching
+    the FS.
     """
-    import pathlib  # noqa: PLC0415
-
     from pmri_server.services.panel import _panels_dir  # noqa: PLC0415
 
     if "/" in name or "\\" in name or name in ("", ".", ".."):
         return None
     panels_dir = _panels_dir(ctx)
-    # ``_panels_dir`` consults ctx._panels_dir, then
-    # ctx.config_store.profile.panels_dir, then Profile.default().
-    # UI tests often wire only ``_roster_profile``; honour that too.
-    if panels_dir is None:
-        profile = getattr(ctx, "_roster_profile", None)
-        if profile is None:
-            return None
-        panels_dir = pathlib.Path(profile.profile_dir) / "panels"
-        if not panels_dir.is_dir():
-            return None
+    if panels_dir is None or not panels_dir.is_dir():
+        return None
     for cand in (panels_dir / f"{name}.xml", panels_dir / name):
         if cand.is_file():
             try:
@@ -339,6 +330,68 @@ def _panel_xml_bytes(ctx: Any, name: str) -> bytes | None:
             except OSError:
                 return None
     return None
+
+
+def _panel_model_to_json(model: Any) -> dict[str, Any]:
+    """Wire-shape projection of a ``PanelModel`` for the Canvas editor.
+
+    The field names here are the contract the client-side JS consumes;
+    adding a new icon type means adding a key here AND a draw case in
+    ``panel_canvas.js``. Field names stay terse so the payload is
+    compact when the Pi serves big layouts over a slow Wi-Fi link.
+    """
+    return {
+        "name": model.name,
+        "width": model.width,
+        "height": model.height,
+        "points": [
+            {"ident": p.ident, "x": p.x, "y": p.y}
+            for p in model.positionable_points
+        ],
+        "segments": [
+            {
+                "ident": s.ident,
+                "c1": {"ref": s.connect1_name, "type": s.type1},
+                "c2": {"ref": s.connect2_name, "type": s.type2},
+                "mainline": s.main_line,
+                "dashed": s.dashed,
+                "block": s.layout_block,
+            }
+            for s in model.track_segments
+        ],
+        "turnouts": [
+            {
+                "ident": t.ident,
+                "turnout": t.turnout,
+                "cen": [t.xcen, t.ycen],
+                "a": [t.xa, t.ya],
+                "b": [t.xb, t.yb],
+                "c": [t.xc, t.yc],
+                "block": t.layout_block,
+            }
+            for t in model.layout_turnouts
+        ],
+        "sensor_icons": [
+            {"sensor": s.sensor, "x": s.x, "y": s.y, "rotate": s.rotate}
+            for s in model.sensor_icons
+        ],
+        "turnout_icons": [
+            {"turnout": t.turnout, "x": t.x, "y": t.y, "rotate": t.rotate}
+            for t in model.turnout_icons
+        ],
+        "signal_icons": [
+            {"sysname": s.system_name, "x": s.x, "y": s.y, "kind": s.kind}
+            for s in model.signal_icons
+        ],
+        "memory_icons": [
+            {"memory": m.memory, "x": m.x, "y": m.y}
+            for m in model.memory_icons
+        ],
+        "text_labels": [
+            {"text": t.text, "x": t.x, "y": t.y}
+            for t in model.text_labels
+        ],
+    }
 
 
 def _panel_bean_state_for(ctx: Any) -> Callable[[str, str], int | None]:
@@ -489,8 +542,24 @@ async def _dispatch(
 
 
 def install_template_routes(
-    app: FastAPI, handle: AppHandle, templates: Jinja2Templates
+    app: FastAPI, handle: AppHandle, templates: Jinja2Templates,
+    *, nudge: Any = None,
 ) -> None:
+    # Optional NudgeHub for server-initiated DOM-refresh pushes.
+    # ``_nudge(topic)`` fires-and-forgets from any async context.
+    # When ``nudge`` is None (older tests built without the WebSocket
+    # endpoint), the call is a no-op so callers don't have to branch.
+    import asyncio as _asyncio    # noqa: PLC0415
+
+    def _nudge(topic: str, data: dict[str, Any] | None = None) -> None:
+        if nudge is None:
+            return
+        try:
+            _asyncio.create_task(nudge.broadcast(topic, data))
+        except RuntimeError:
+            # No running loop -- fall back to the hub's cached loop
+            # (set on first ``attach``) via a threadsafe schedule.
+            nudge.broadcast_sync(topic, data)
     # ---- auth: /login + /logout ----------------------------------------
     # These routes only do something meaningful when
     # ``JMRI_AUTH_ENABLED=1``. With auth off, ``ctx.auth`` is None and
@@ -1384,11 +1453,17 @@ def install_template_routes(
             panels = await _dispatch(handle, type="panel", method="list")
         except HTTPException:
             panels = []
+        err = request.query_params.get("err")
+        err_panel_name = request.query_params.get("name")
+        deleted_name = request.query_params.get("deleted")
         return templates.TemplateResponse(
             request, "panel.html",
             _base_context(handle, "panel") | {
                 "panel_summary": None,
                 "profile_panels": panels,
+                "create_error": err,
+                "create_error_name": err_panel_name,
+                "deleted_name": deleted_name,
             },
         )
 
@@ -3408,6 +3483,7 @@ def install_template_routes(
         statuses = await _dispatch(
             handle, type="scripts", method="list", data={"library": True},
         )
+        _nudge("scripts")
         return templates.TemplateResponse(
             request, "_scripts_table.html", {"statuses": statuses},
         )
@@ -3447,6 +3523,7 @@ def install_template_routes(
         statuses = await _dispatch(
             handle, type="scripts", method="list", data={"library": True},
         )
+        _nudge("scripts")
         return templates.TemplateResponse(
             request, "_scripts_table.html", {"statuses": statuses},
         )
@@ -3460,6 +3537,7 @@ def install_template_routes(
         statuses = await _dispatch(
             handle, type="scripts", method="list", data={"library": True},
         )
+        _nudge("scripts")
         return templates.TemplateResponse(
             request, "_scripts_table.html", {"statuses": statuses},
         )
@@ -3475,6 +3553,7 @@ def install_template_routes(
         statuses = await _dispatch(
             handle, type="scripts", method="list", data={"library": True},
         )
+        _nudge("scripts")
         return templates.TemplateResponse(
             request, "_scripts_table.html", {"statuses": statuses},
         )
@@ -5602,6 +5681,98 @@ def install_template_routes(
                 {"search_results": None, "search_error": exc.detail},
             )
 
+    @app.post("/panel/create")
+    async def panel_create(request: Request) -> Any:
+        """Create a blank LayoutEditor panel and redirect to the editor.
+
+        The form posts a desired ``name`` + optional ``width``/``height``.
+        The name must be a filesystem-safe basename (no path separators).
+        On a name collision the response redirects back to ``/panel``
+        with a query-string marker so the UI can show an inline error
+        instead of stranding the operator on a bare JSON page.
+        """
+        from fastapi.responses import RedirectResponse  # noqa: PLC0415
+
+        from pmri_server.services.panel import _panels_dir  # noqa: PLC0415
+
+        form = await request.form()
+        name = str(form.get("name") or "").strip()
+        if not name or "/" in name or "\\" in name or name in (".", ".."):
+            return RedirectResponse(
+                "/panel?err=badname", status_code=303,
+            )
+        try:
+            width = int(form.get("width") or 1200)
+            height = int(form.get("height") or 800)
+        except (TypeError, ValueError):
+            return RedirectResponse(
+                "/panel?err=badsize", status_code=303,
+            )
+
+        panels_dir = _panels_dir(handle.ctx)
+        if panels_dir is None:
+            return RedirectResponse(
+                "/panel?err=noprofile", status_code=303,
+            )
+        panels_dir.mkdir(parents=True, exist_ok=True)
+        path = panels_dir / f"{name}.xml"
+        if path.exists():
+            return RedirectResponse(
+                f"/panel?err=exists&name={name}", status_code=303,
+            )
+        path.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<layout-config>\n'
+            f'<LayoutEditor name="{name}" '
+            f'panelwidth="{width}" panelheight="{height}"/>\n'
+            '</layout-config>\n',
+            encoding="utf-8",
+        )
+        return RedirectResponse(
+            f"/panels/{name}/edit", status_code=303,
+        )
+
+    @app.post("/panel/delete")
+    async def panel_delete(request: Request) -> Any:
+        """Delete a panel XML plus its rolling-backup siblings.
+
+        The form posts the panel ``name`` (basename). Rejects path
+        traversal before touching the FS. The .bak / .bak2 siblings
+        the panel-edit service rotates before each write are also
+        removed so the panels dir doesn't accumulate orphan backups.
+        """
+        from fastapi.responses import RedirectResponse  # noqa: PLC0415
+
+        from pmri_server.services.panel import _panels_dir  # noqa: PLC0415
+
+        form = await request.form()
+        name = str(form.get("name") or "").strip()
+        if not name or "/" in name or "\\" in name or name in (".", ".."):
+            return RedirectResponse(
+                "/panel?err=badname", status_code=303,
+            )
+        panels_dir = _panels_dir(handle.ctx)
+        if panels_dir is None:
+            return RedirectResponse(
+                "/panel?err=noprofile", status_code=303,
+            )
+        target = panels_dir / f"{name}.xml"
+        if not target.is_file():
+            return RedirectResponse(
+                f"/panel?err=missing&name={name}", status_code=303,
+            )
+        for sibling in (target,
+                        target.with_suffix(target.suffix + ".bak"),
+                        target.with_suffix(target.suffix + ".bak2")):
+            try:
+                if sibling.is_file():
+                    sibling.unlink()
+            except OSError:
+                pass   # best-effort cleanup
+        return RedirectResponse(
+            f"/panel?deleted={name}", status_code=303,
+        )
+
     @app.post("/panel/upload", response_class=HTMLResponse)
     async def panel_upload(request: Request, file: UploadFile) -> Any:
         from pmri_core.persistence import load_panel_bytes  # noqa: PLC0415
@@ -5661,3 +5832,47 @@ def install_template_routes(
         model = parse_panel_xml(xml_bytes)
         svg = render_svg(model, _panel_bean_state_for(handle.ctx))
         return Response(content=svg, media_type="image/svg+xml")
+
+    @app.get("/panels/{name}/model")
+    async def panels_model(name: str) -> Any:
+        """Machine-readable JSON projection of the panel model.
+
+        The Canvas editor fetches this on load (and after every edit)
+        to repaint; keeping the shape stable here keeps the JS module
+        unaffected by changes to the python model internals.
+        """
+        from fastapi.responses import JSONResponse  # noqa: PLC0415
+
+        xml_bytes = _panel_xml_bytes(handle.ctx, name)
+        if xml_bytes is None:
+            raise HTTPException(404, f"no panel named {name!r}")
+        from pmri_core.persistence.panel_model import (  # noqa: PLC0415
+            parse_panel_xml,
+        )
+        model = parse_panel_xml(xml_bytes)
+        return JSONResponse(_panel_model_to_json(model))
+
+    @app.get("/panels/{name}/edit", response_class=HTMLResponse)
+    async def panels_edit(request: Request, name: str) -> Any:
+        """Canvas-based editor view of a panel.
+
+        The initial HTML is a bare chrome; the Canvas, toolbar, and
+        properties drawer are driven entirely by ``panel_canvas.js``
+        which fetches the panel model as JSON. Edits travel to the
+        server over the existing JSON WebSocket as ``panel-edit`` ops.
+        """
+        xml_bytes = _panel_xml_bytes(handle.ctx, name)
+        if xml_bytes is None:
+            raise HTTPException(404, f"no panel named {name!r}")
+        from pmri_core.persistence.panel_model import (  # noqa: PLC0415
+            parse_panel_xml,
+        )
+        model = parse_panel_xml(xml_bytes)
+        return templates.TemplateResponse(
+            request, "panel_edit.html",
+            _base_context(handle, "panel") | {
+                "name": name,
+                "width": model.width,
+                "height": model.height,
+            },
+        )

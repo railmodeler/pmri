@@ -183,7 +183,7 @@
 <div class="card">
   <h3 style="margin-top:0">Bus stats</h3>
   <div hx-get="/openlcb/monitor/stats"
-       hx-trigger="every 2s"
+       hx-trigger="pmri:openlcb from:body"
        hx-target="#openlcb-stats" hx-swap="outerHTML">
     {% include "_openlcb_stats.html" %}
   </div>
@@ -273,39 +273,17 @@
     </label>
   </form>
 
-  {# Auto-refreshing fragment — htmx polls the refresh endpoint
-     every 2 seconds and swaps the table. ``hx-include`` carries
-     the filter form's current values on every request so the
-     server-side filter matches what the operator sees. The custom
-     ``olcb-sse-nudge`` trigger fires on each SSE push so live
-     traffic updates in near real-time; the 2s poll remains as a
-     safety net for browsers where EventSource is unavailable or
-     the SSE connection drops. #}
+  {# Auto-refreshing fragment -- refetches when the WebSocket
+     ``pmri:openlcb`` nudge fires (server-side tail task diffs
+     bus state and nudges on change). ``hx-include`` carries the
+     filter form's current values on every request so the
+     server-side filter matches what the operator sees. #}
   <div hx-get="/openlcb/monitor/refresh"
-       hx-trigger="every 2s, olcb-sse-nudge from:body"
+       hx-trigger="pmri:openlcb from:body"
        hx-include="#openlcb-monitor-filter"
        hx-target="#openlcb-monitor" hx-swap="outerHTML">
     {% include "_openlcb_monitor.html" %}
   </div>
 </div>
-
-<script>
-  // Live push: subscribe to the SSE nudge stream and fire a custom
-  // event on the body every time a frame lands on the wire. The
-  // auto-poll container above listens for it and re-fetches with
-  // the current filter state. Falls back to plain polling if the
-  // browser (or a corporate proxy) blocks EventSource.
-  (function() {
-    if (typeof EventSource === "undefined") return;
-    try {
-      const src = new EventSource("/openlcb/monitor/sse");
-      src.onmessage = function() {
-        document.body.dispatchEvent(new Event("olcb-sse-nudge"));
-      };
-      // Silent on error — the 2s polling covers us if SSE fails.
-      src.onerror = function() { /* keep browser retry behaviour */ };
-    } catch (_) { /* fall back to polling */ }
-  })();
-</script>
 {% endif %}
 {% endblock %}

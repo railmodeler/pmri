@@ -117,10 +117,10 @@
 <div class="card">
   <div class="row" style="align-items:baseline">
     <h3 style="margin:0">PCER activity</h3>
-    <span class="muted small">Auto-refresh every 3 seconds.</span>
+    <span class="muted small">Refreshes on bus traffic.</span>
   </div>
   <div hx-get="/openlcb/nodes/{{ node.alias }}/pcer_history"
-       hx-trigger="every 3s"
+       hx-trigger="pmri:openlcb from:body"
        hx-target="#openlcb-node-pcer-history" hx-swap="outerHTML">
     {% include "_openlcb_node_pcer_history.html" %}
   </div>
@@ -129,13 +129,13 @@
 <div class="card">
   <div class="row" style="align-items:baseline">
     <h3 style="margin:0">Recent frames from this peer</h3>
-    <span class="muted small">Auto-refresh every 3 seconds. Newest first.</span>
+    <span class="muted small">Refreshes on bus traffic. Newest first.</span>
   </div>
-  {# Auto-polling wrapper — the fragment endpoint applies the
-     source_alias filter server-side, so this card can't accidentally
-     show frames from a different peer. #}
+  {# Refetch on the ``pmri:openlcb`` nudge -- the fragment endpoint
+     applies the source_alias filter server-side, so this card can't
+     accidentally show frames from a different peer. #}
   <div hx-get="/openlcb/nodes/{{ node.alias }}/frames"
-       hx-trigger="every 3s"
+       hx-trigger="pmri:openlcb from:body"
        hx-target="#openlcb-node-frames" hx-swap="outerHTML">
     {% include "_openlcb_node_frames.html" %}
   </div>

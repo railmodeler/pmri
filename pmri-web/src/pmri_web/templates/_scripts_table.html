@@ -1,9 +1,9 @@
-{# Live output tail: while any script is running, htmx polls the
-   refresh endpoint every 2s so print() output from long-running
-   scripts (automatons especially) shows up without the operator
-   clicking Refresh manually. When nothing's running, polling stops
-   automatically because ``hx-trigger`` isn't attached. #}
-{% set any_running = statuses|selectattr('running')|list|length > 0 %}
+{# Live refresh via WebSocket nudge rather than fixed-rate polling.
+   ``pmri_push.js`` opens ``/ws/nudge`` on page load; any server-side
+   route that mutates script state calls ``_nudge("scripts")`` which
+   fans out a ``pmri:scripts`` CustomEvent on ``document.body``. The
+   table hx-triggers off that event and refetches. If no clients are
+   running scripts, no nudges fire -- no traffic. #}
 {% if run_error %}
 <div class="card" style="border-color: var(--err, #c33); margin-bottom: 0.5rem;">
   <strong style="color: var(--err, #c33);">Run failed:</strong>
@@ -11,10 +11,10 @@
 </div>
 {% endif %}
 <table id="scripts-table"
-       {% if any_running %}hx-get="/scripts/refresh"
-       hx-trigger="every 2s"
+       hx-get="/scripts/refresh"
+       hx-trigger="pmri:scripts from:body"
        hx-target="#scripts-table"
-       hx-swap="outerHTML"{% endif %}>
+       hx-swap="outerHTML">
   <thead><tr><th>Name</th><th>Status</th><th>Output</th><th>Error</th><th>Actions</th></tr></thead>
   <tbody>
     {% for s in statuses %}

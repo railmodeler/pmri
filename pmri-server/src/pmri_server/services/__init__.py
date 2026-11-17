@@ -35,6 +35,7 @@ from pmri_server.services.meta import (
 from pmri_server.services.openlcb import OpenLcbCSService, OpenLcbService
 from pmri_server.services.oblock import OBlockService
 from pmri_server.services.panel import PanelService
+from pmri_server.services.panel_edit import PanelEditService
 from pmri_server.services.programmer import ProgrammerService
 from pmri_server.services.roster import RosterService
 from pmri_server.services.scripts import ScriptsService
@@ -76,6 +77,7 @@ ALL_SERVICES = [
     LayoutBlockService,
     OBlockService,
     PanelService,
+    PanelEditService,
     LogixNGService,
     LogsService,
     SignalSystemService,
@@ -119,6 +121,7 @@ __all__ = [
     "OpenLcbCSService",
     "OpenLcbService",
     "PanelService",
+    "PanelEditService",
     "PingService",
     "PowerService",
     "ProgrammerService",

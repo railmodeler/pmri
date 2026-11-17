@@ -1,328 +1,47 @@
-"""Parse JMRI panel XML + render as inline SVG.
+"""Inline-SVG renderer for a parsed :class:`PanelModel`.
 
-JMRI panels come in two flavours:
+The data model and parser (``PanelModel``, ``parse_panel_xml``, and the
+per-element dataclasses) moved to :mod:`pmri_core.persistence.panel_model`
+so that both the web layer and the ``layout_topology`` bean in
+``pmri-core`` can consume them. This module re-exports those names for
+backward compatibility and keeps only the SVG rendering.
 
-* ``<paneleditor>`` -- the icon-tile layout used by control panels.
-  Just ``<sensoricon>`` / ``<turnouticon>`` / ``<positionablelabel>``
-  / etc. at absolute (x, y) positions, with ``rotate`` increments
-  of 90 degrees.
-* ``<layouteditor>`` -- the track-plan layout. Carries
-  ``<positionablepoint>`` anchors + ``<tracksegment>`` connectors +
-  ``<layoutturnout>`` turnouts + the same icon vocabulary.
+The SVG renderer is slated for replacement by a Canvas-based renderer
+(the ongoing Layout Panel Editor work), but it stays live for the
+read-only panel viewer until the Canvas path ships.
 
-This module parses either into a :class:`PanelModel` of position-tagged
-primitives and renders SVG that:
+The renderer:
 
-* Shows every parsed element at its XML (x, y) in a viewport sized
-  to the panel's declared ``width`` / ``height``.
-* Draws bean-backed icons (sensor / turnout / signal) coloured by
-  current bean state when the caller passes a *bean_state* function.
-* Tags every bean-backed element with ``data-sysname`` + ``data-kind``
-  so client-side JS can wire click-to-toggle and live-refresh
-  without re-parsing the XML.
-
-Elements we don't recognise are **skipped silently** (counted into
-:attr:`PanelModel.unknown_tags` so the page can show a "N element
-types we didn't draw" footnote). This keeps a real-world panel
-rendering gracefully even when it contains Panel Editor features
-we haven't ported yet.
+* draws every parsed element at its XML (x, y) in a viewport sized to
+  the panel's declared ``width`` / ``height``;
+* colours bean-backed icons (sensor / turnout / signal) by current bean
+  state when the caller passes a ``bean_state`` function;
+* tags every bean-backed element with ``data-sysname`` + ``data-kind``
+  so client-side JS can wire click-to-toggle and live-refresh without
+  re-parsing the XML.
 """
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass, field
-from typing import Callable, Literal
+from typing import Callable
 
-from lxml import etree
-
-
-# ---- model --------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class SensorIcon:
-    sensor: str
-    x: float
-    y: float
-    rotate: int = 0
-
-
-@dataclass(frozen=True)
-class TurnoutIcon:
-    turnout: str
-    x: float
-    y: float
-    rotate: int = 0
-
-
-@dataclass(frozen=True)
-class SignalIcon:
-    """``signalmasticon`` or ``signalheadicon`` -- rendered the same for MVP."""
-
-    system_name: str
-    x: float
-    y: float
-    kind: Literal["mast", "head"] = "mast"
-
-
-@dataclass(frozen=True)
-class MemoryIcon:
-    memory: str
-    x: float
-    y: float
-
-
-@dataclass(frozen=True)
-class TextLabel:
-    text: str
-    x: float
-    y: float
-
-
-@dataclass(frozen=True)
-class IconLabel:
-    """``positionablelabel`` with an ``icon=`` attribute -- we don't
-    fetch the icon file; just show a stub square + the href as hover."""
-
-    icon_url: str
-    x: float
-    y: float
-
-
-@dataclass(frozen=True)
-class PositionablePoint:
-    """LayoutEditor anchor at (x, y). Track segments reference it by
-    ``ident`` as one endpoint."""
-
-    ident: str
-    x: float
-    y: float
-
-
-@dataclass(frozen=True)
-class TrackSegment:
-    """A line (or arc, when we gain that scope) between two anchor
-    points identified by their ``ident``."""
-
-    ident: str
-    connect1_name: str
-    connect2_name: str
-    main_line: bool = False
-    dashed: bool = False
-
-
-@dataclass(frozen=True)
-class LayoutTurnoutGeom:
-    """LayoutEditor turnout: a center + three endpoints (A/B/C).
-
-    JMRI's XML carries the center at ``xcen``/``ycen`` and the three
-    endpoints at ``xa``/``ya`` etc. We reproduce the two legs as
-    lines from center to A/B/C with the C leg coloured by the bean's
-    current state (closed vs thrown).
-    """
-
-    turnout: str                  # bean system name, or "" for unassigned
-    ident: str
-    xcen: float
-    ycen: float
-    xa: float
-    ya: float
-    xb: float
-    yb: float
-    xc: float
-    yc: float
-
-
-@dataclass
-class PanelModel:
-    """Parsed panel content ready to render."""
-
-    name: str = ""
-    width: int = 1200
-    height: int = 800
-    sensor_icons: list[SensorIcon] = field(default_factory=list)
-    turnout_icons: list[TurnoutIcon] = field(default_factory=list)
-    signal_icons: list[SignalIcon] = field(default_factory=list)
-    memory_icons: list[MemoryIcon] = field(default_factory=list)
-    text_labels: list[TextLabel] = field(default_factory=list)
-    icon_labels: list[IconLabel] = field(default_factory=list)
-    positionable_points: list[PositionablePoint] = field(default_factory=list)
-    track_segments: list[TrackSegment] = field(default_factory=list)
-    layout_turnouts: list[LayoutTurnoutGeom] = field(default_factory=list)
-    unknown_tags: Counter[str] = field(default_factory=Counter)
-
-    @property
-    def point_by_ident(self) -> dict[str, PositionablePoint]:
-        return {p.ident: p for p in self.positionable_points}
-
-
-# ---- parser -------------------------------------------------------------
-
-
-_KNOWN_ICON_TAGS = frozenset({
-    "sensoricon", "turnouticon", "signalmasticon", "signalheadicon",
-    "memoryicon", "positionablelabel",
-})
-_KNOWN_LE_TAGS = frozenset({
-    "positionablepoint", "tracksegment", "layoutturnout",
-})
-_KNOWN_SKIP = frozenset({
-    # Infrastructure / configuration elements that aren't drawable but
-    # legitimately appear inside a panel section -- don't count them
-    # as "unknown drawable types".
-    "operations", "operation", "signalhead", "signalmast", "block",
-    "logix", "conditional", "variable", "action", "layoutShape",
-    "turnoutbx", "turnoutcx", "turnoutwid", "xoverlong", "xoverhwid",
-    "xovershort", "sidetrackwidth", "mainlinetrackwidth",
-    "trackAsColourType", "defaulttrackcolor", "defaultoccupiedtrackcolor",
-    "defaultalternativetrackcolor", "defaulttextcolor",
-    "turnoutcirclecolor", "turnoutcirclethrowncolor",
-    "turnoutCircleColourType", "turnoutcirclesize", "turnoutcircles",
-    "turnoutdrawunselectedleg", "turnoutfillcontrolcircles",
-    "layoutTrackDrawingOptions", "gridSize", "gridSize2nd",
-    "snaponadd", "snaponmove", "antialiasing", "drawgrid",
-    "showhelpbar", "tooltipsinedit", "tooltipsnotedit",
-    "autoblkgenerate", "scrollable", "editable", "controlling",
-    "animating", "sliders", "redBackground", "greenBackground",
-    "blueBackground", "panelmenu", "highlightCursor", "fastclock",
-    "openDispatcher", "useDirectTurnoutControl", "LayoutEditorType",
-})
-
-
-def _f(elem: etree._Element, attr: str, default: float = 0.0) -> float:
-    """Parse a float attribute. Missing / malformed -> *default*."""
-    raw = elem.get(attr)
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def _i(elem: etree._Element, attr: str, default: int = 0) -> int:
-    raw = elem.get(attr)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def parse_panel_xml(xml_bytes: bytes) -> PanelModel:
-    """Parse *xml_bytes* (a complete JMRI panel XML file) into a model.
-
-    Handles both ``<paneleditor>`` and ``<layouteditor>`` roots; the
-    file's actual root is ``<layout-config>`` so we look for either
-    kind of panel inside.
-    """
-    root = etree.fromstring(xml_bytes)
-    model = PanelModel()
-    # Find the first paneleditor / layouteditor child. Real JMRI
-    # files have exactly one of these (sometimes zero if the file is
-    # a pure configuration dump), so iterate and take the first.
-    panel_elem: etree._Element | None = None
-    # JMRI uses lowercase element names inside ``<layout-config>``
-    # (``paneleditor``, ``layouteditor``) but the schema's standalone
-    # root uses PascalCase names (``PanelEditor``, ``LayoutEditor``,
-    # ``ControlPanelEditor``, ``SwitchboardEditor``). Accept either so
-    # the renderer works against real panel files AND the simpler
-    # standalone-root form used in test fixtures + the JSON service's
-    # existing panel listings.
-    _panel_tags = {
-        "paneleditor", "layouteditor",
-        "PanelEditor", "LayoutEditor", "ControlPanelEditor",
-        "SwitchboardEditor",
-    }
-    for cand in root.iter():
-        if cand.tag in _panel_tags:
-            panel_elem = cand
-            break
-    if panel_elem is None:
-        return model
-    model.name = panel_elem.get("name", "")
-    model.width = _i(panel_elem, "panelwidth", _i(panel_elem, "width", 1200))
-    model.height = _i(panel_elem, "panelheight", _i(panel_elem, "height", 800))
-
-    for child in panel_elem.iter():
-        if child is panel_elem:
-            continue
-        tag = child.tag
-        if not isinstance(tag, str):
-            continue   # comment / PI
-        _parse_one(model, child, tag)
-    return model
-
-
-def _parse_one(model: PanelModel, child: etree._Element, tag: str) -> None:
-    if tag == "sensoricon":
-        sysname = child.get("sensor", "")
-        model.sensor_icons.append(SensorIcon(
-            sensor=sysname,
-            x=_f(child, "x"), y=_f(child, "y"),
-            rotate=_i(child, "rotate", 0),
-        ))
-    elif tag == "turnouticon":
-        model.turnout_icons.append(TurnoutIcon(
-            turnout=child.get("turnout", ""),
-            x=_f(child, "x"), y=_f(child, "y"),
-            rotate=_i(child, "rotate", 0),
-        ))
-    elif tag in ("signalmasticon", "signalheadicon"):
-        attr = "signalmast" if tag == "signalmasticon" else "signalhead"
-        model.signal_icons.append(SignalIcon(
-            system_name=child.get(attr, ""),
-            x=_f(child, "x"), y=_f(child, "y"),
-            kind="mast" if tag == "signalmasticon" else "head",
-        ))
-    elif tag == "memoryicon":
-        model.memory_icons.append(MemoryIcon(
-            memory=child.get("memory", ""),
-            x=_f(child, "x"), y=_f(child, "y"),
-        ))
-    elif tag == "positionablelabel":
-        text = child.get("text") or ""
-        icon = child.get("icon") or ""
-        if text:
-            model.text_labels.append(TextLabel(
-                text=text,
-                x=_f(child, "x"), y=_f(child, "y"),
-            ))
-        elif icon:
-            model.icon_labels.append(IconLabel(
-                icon_url=icon,
-                x=_f(child, "x"), y=_f(child, "y"),
-            ))
-    elif tag == "positionablepoint":
-        model.positionable_points.append(PositionablePoint(
-            ident=child.get("ident", ""),
-            x=_f(child, "x"), y=_f(child, "y"),
-        ))
-    elif tag == "tracksegment":
-        model.track_segments.append(TrackSegment(
-            ident=child.get("ident", ""),
-            connect1_name=child.get("connect1name", ""),
-            connect2_name=child.get("connect2name", ""),
-            main_line=(child.get("mainline", "no").lower() == "yes"),
-            dashed=(child.get("dashed", "no").lower() == "yes"),
-        ))
-    elif tag == "layoutturnout":
-        model.layout_turnouts.append(LayoutTurnoutGeom(
-            turnout=child.get("turnoutname", ""),
-            ident=child.get("ident", ""),
-            xcen=_f(child, "xcen"), ycen=_f(child, "ycen"),
-            xa=_f(child, "xa"), ya=_f(child, "ya"),
-            xb=_f(child, "xb"), yb=_f(child, "yb"),
-            xc=_f(child, "xc"), yc=_f(child, "yc"),
-        ))
-    elif tag in _KNOWN_SKIP:
-        return
-    else:
-        model.unknown_tags[tag] += 1
-
-
-# ---- renderer -----------------------------------------------------------
+from pmri_core.persistence.panel_model import (
+    HIT_POS_POINT,
+    HIT_TURNOUT_A,
+    HIT_TURNOUT_B,
+    HIT_TURNOUT_C,
+    HIT_TURNOUT_D,
+    IconLabel,
+    LayoutTurnoutGeom,
+    MemoryIcon,
+    PanelModel,
+    PositionablePoint,
+    SensorIcon,
+    SignalIcon,
+    TextLabel,
+    TrackSegment,
+    TurnoutIcon,
+    parse_panel_xml,
+)
 
 
 # Bean state codes. The parser doesn't know about these; the caller
@@ -360,6 +79,39 @@ def _turnout_fill(state: int | None) -> tuple[str, str]:
     return "#888", "#888"
 
 
+def _segment_endpoint(
+    name: str, hit_type: int,
+    points: dict[str, PositionablePoint],
+    turnouts: dict[str, LayoutTurnoutGeom],
+) -> tuple[float, float] | None:
+    """Resolve a ``tracksegment`` endpoint to an (x, y) pair.
+
+    When the endpoint type is ``HIT_POS_POINT`` we look up the
+    :class:`PositionablePoint` by ident. For turnout-leg endpoints we
+    pick the matching leg's (xa, ya) / (xb, yb) / (xc, yc) /
+    (xd? not modelled) on the referenced :class:`LayoutTurnoutGeom`.
+    """
+    if hit_type == HIT_POS_POINT:
+        pt = points.get(name)
+        if pt is None:
+            return None
+        return pt.x, pt.y
+    tt = turnouts.get(name)
+    if tt is None:
+        return None
+    if hit_type == HIT_TURNOUT_A:
+        return tt.xa, tt.ya
+    if hit_type == HIT_TURNOUT_B:
+        return tt.xb, tt.yb
+    if hit_type == HIT_TURNOUT_C:
+        return tt.xc, tt.yc
+    if hit_type == HIT_TURNOUT_D:
+        # Not modelled on LayoutTurnoutGeom today; fall through to centre
+        # so the segment still draws rather than disappearing.
+        return tt.xcen, tt.ycen
+    return None
+
+
 def render_svg(
     model: PanelModel,
     bean_state: BeanStateFn | None = None,
@@ -389,15 +141,16 @@ def render_svg(
     )
     # Track segments draw first so icons sit on top.
     pts = model.point_by_ident
+    tos = model.turnout_by_ident
     for seg in model.track_segments:
-        a = pts.get(seg.connect1_name)
-        b = pts.get(seg.connect2_name)
+        a = _segment_endpoint(seg.connect1_name, seg.type1, pts, tos)
+        b = _segment_endpoint(seg.connect2_name, seg.type2, pts, tos)
         if a is None or b is None:
             continue
         width = 4 if seg.main_line else 2
         dash = ' stroke-dasharray="6,4"' if seg.dashed else ""
         parts.append(
-            f'<line x1="{a.x}" y1="{a.y}" x2="{b.x}" y2="{b.y}" '
+            f'<line x1="{a[0]}" y1="{a[1]}" x2="{b[0]}" y2="{b[1]}" '
             f'stroke="#444" stroke-width="{width}"{dash} />'
         )
     for pp in model.positionable_points:

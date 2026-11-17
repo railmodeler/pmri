@@ -13,10 +13,10 @@
 
 {% include "_openlcb_identity.html" %}
 
-{# Bus health — extracted into a fragment so htmx can poll just
-   this card without re-rendering the whole page. #}
+{# Bus health card -- refetches when the server-side openlcb-tail
+   task reports state changed. No client-side polling. #}
 <div hx-get="/openlcb/health/refresh"
-     hx-trigger="every 10s"
+     hx-trigger="pmri:openlcb from:body"
      hx-target="#openlcb-health" hx-swap="outerHTML">
   {% include "_openlcb_health.html" %}
 </div>
@@ -51,12 +51,10 @@
       Refresh
     </button>
   </div>
-  {# Auto-poll every 5s so a peer joining the bus surfaces without
-     a manual click. The Refresh + Prune buttons still work — their
-     own hx-post/hx-get responses swap in immediately and reset the
-     polling interval. #}
+  {# Refetch on the openlcb-tail nudge so a peer joining the bus
+     surfaces without a manual click AND without fixed-rate polling. #}
   <div hx-get="/openlcb/nodes/refresh"
-       hx-trigger="every 5s"
+       hx-trigger="pmri:openlcb from:body"
        hx-target="#openlcb-nodes" hx-swap="outerHTML">
     {% include "_openlcb_nodes.html" %}
   </div>

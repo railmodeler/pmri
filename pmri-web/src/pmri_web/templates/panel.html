@@ -1,7 +1,39 @@
 {% extends "base.html" %}
 {% block title %}Panel viewer{% endblock %}
 {% block content %}
-<h2>Panel viewer</h2>
+<h2>Panel viewer &amp; editor</h2>
+
+{% if create_error == "exists" %}
+<div class="card" style="border-color:#c33;color:#c33">
+  Panel <code>{{ create_error_name }}</code> already exists -- open it
+  from the list below, or create one under a different name.
+</div>
+{% elif create_error == "badname" %}
+<div class="card" style="border-color:#c33;color:#c33">
+  Panel name is required and must contain only letters, digits,
+  dot, dash, or underscore.
+</div>
+{% elif create_error == "badsize" %}
+<div class="card" style="border-color:#c33;color:#c33">
+  Width and height must be integers.
+</div>
+{% elif create_error == "noprofile" %}
+<div class="card" style="border-color:#c33;color:#c33">
+  No active profile -- can't create a panel. Check the profile wiring
+  in <code>profile.xml</code>.
+</div>
+{% elif create_error == "missing" %}
+<div class="card" style="border-color:#c33;color:#c33">
+  Panel <code>{{ create_error_name }}</code> not found -- it may have
+  been removed already.
+</div>
+{% endif %}
+
+{% if deleted_name %}
+<div class="card" style="border-color:#3a6;color:#3a6">
+  Deleted panel <code>{{ deleted_name }}</code>.
+</div>
+{% endif %}
 
 {% if profile_panels %}
 <div class="card">
@@ -13,11 +45,49 @@
          SVG route takes the stem alone. #}
       <a href="/panels/{{ p.userName }}"><code class="mono">{{ p.userName }}</code></a>
       <span class="muted small">({{ p.type }})</span>
+      &middot;
+      <a href="/panels/{{ p.userName }}/edit">Open editor</a>
+      &middot;
+      <form action="/panel/delete" method="post" style="display:inline"
+            onsubmit="return confirm('Delete panel {{ p.userName }} and its backups? This cannot be undone.')">
+        <input type="hidden" name="name" value="{{ p.userName }}" />
+        <button type="submit" style="color:#c33;background:transparent;border:0;cursor:pointer;padding:0"
+                title="Delete this panel and its rolling backups">Delete</button>
+      </form>
     </li>
     {% endfor %}
   </ul>
 </div>
+{% else %}
+<div class="card">
+  <p class="muted">No panels in the active profile yet.
+     Create a blank one below, or upload an existing JMRI panel XML.</p>
+</div>
 {% endif %}
+
+<div class="card">
+  <h3>Create new panel</h3>
+  <p class="muted small">Starts a blank <code>LayoutEditor</code> and
+    opens it in the Canvas editor. Width &times; height set the
+    editable viewport; you can tune it later by editing the XML.</p>
+  <form action="/panel/create" method="post" class="row"
+        style="gap:0.5rem; align-items:baseline; flex-wrap:wrap">
+    <label>Name
+      <input type="text" name="name" required pattern="[A-Za-z0-9_.-]+"
+             title="letters, digits, dot, dash, underscore"
+             placeholder="MyLayout" />
+    </label>
+    <label>Width
+      <input type="number" name="width" value="1200" min="200" max="8192"
+             style="width:6em" />
+    </label>
+    <label>Height
+      <input type="number" name="height" value="800" min="200" max="8192"
+             style="width:6em" />
+    </label>
+    <button type="submit">Create &amp; open in editor</button>
+  </form>
+</div>
 
 <div class="card">
   <h3>Upload + render</h3>

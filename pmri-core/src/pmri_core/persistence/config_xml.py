@@ -125,6 +125,26 @@ class TurnoutRow:
     # verbatim so JMRI-authored details round-trip without us understanding
     # them.
     extra_attribs: dict[str, str] = field(default_factory=dict)
+    # Per-slot shape flags preserved from the input file so round-trip
+    # is byte-equal. JMRI files come in four historical shapes:
+    #   pre-5.x: ``<turnout systemName="NT1" userName="Yard"/>`` (attrs only)
+    #   4.x transitional: ``<turnout systemName="NT1" userName="Yard">
+    #                        <systemName>NT1</systemName>
+    #                        <userName>Yard</userName></turnout>`` (duplicated)
+    #   5.x:     ``<turnout><systemName>NT1</systemName>...</turnout>``
+    #            (child elements only)
+    # Default values below produce the 5.x shape for freshly-authored rows.
+    # ``explicit_inverted`` records whether ``inverted=...`` was present
+    # in the input so we don't synthesise a spurious ``inverted="false"``.
+    systemname_as_attr: bool = False
+    systemname_as_child: bool = True
+    username_as_attr: bool = False
+    username_as_child: bool = True
+    # ``suppress_default_inverted`` is True iff the row came from a file
+    # whose ``<turnout>`` had no ``inverted=`` attribute at all. On write
+    # we honour the input by not synthesising ``inverted="false"``. Fresh
+    # rows default to False → emit ``inverted="false"`` (JMRI 5.x shape).
+    suppress_default_inverted: bool = False
 
 
 @dataclass(slots=True)
@@ -136,6 +156,11 @@ class SensorRow:
     inverted: bool = False
     comment: str | None = None
     extra_attribs: dict[str, str] = field(default_factory=dict)
+    systemname_as_attr: bool = False
+    systemname_as_child: bool = True
+    username_as_attr: bool = False
+    username_as_child: bool = True
+    suppress_default_inverted: bool = False
 
 
 @dataclass(slots=True)
@@ -146,6 +171,10 @@ class LightRow:
     user_name: str | None = None
     comment: str | None = None
     extra_attribs: dict[str, str] = field(default_factory=dict)
+    systemname_as_attr: bool = False
+    systemname_as_child: bool = True
+    username_as_attr: bool = False
+    username_as_child: bool = True
 
 
 # ----- per-section containers ----------------------------------------------
@@ -197,6 +226,18 @@ class ConfigFile:
     light_sections: list[LightSection] = field(default_factory=list)
     # Other top-level elements we don't model, kept verbatim:
     preserved: list[etree._Element] = field(default_factory=list)
+    # Document-level nodes that sit *before* the root element (XML
+    # processing instructions, e.g. ``<?xml-stylesheet ...?>``). JMRI's
+    # older panel files carry a stylesheet PI before ``<layout-config>``.
+    # Preserving them keeps round-trip byte-equal.
+    preroot_pis: list[tuple[str, str]] = field(default_factory=list)
+    # Document order of top-level section kinds the way the input had
+    # them. Each entry is one of ``"turnouts"``, ``"sensors"``,
+    # ``"lights"``, ``"preserved"``. ``"preserved"`` entries consume one
+    # element from :attr:`preserved` on write, in list order. Older
+    # JMRI files sometimes write turnouts → lights → sensors; without
+    # preserving order we'd rewrite to our own canonical order.
+    section_order: list[str] = field(default_factory=list)
 
     # ----- accessors -------------------------------------------------------
 
@@ -254,7 +295,23 @@ def _extra_attribs(elem: etree._Element, known: set[str]) -> dict[str, str]:
 # ----- parse: bean rows -----------------------------------------------------
 
 
+def _shape_flags(elem: etree._Element) -> dict[str, bool]:
+    """Detect per-slot XML shape of a bean row so write-back is byte-equal.
+
+    JMRI historically shipped three shapes for ``systemName`` / ``userName``
+    on bean rows: attribute-only (pre-5.x), both attribute AND child (4.x
+    transitional), and child-only (5.x current). Each slot is independent.
+    """
+    return {
+        "systemname_as_attr":  elem.get("systemName") is not None,
+        "systemname_as_child": elem.find("systemName") is not None,
+        "username_as_attr":    elem.get("userName") is not None,
+        "username_as_child":   elem.find("userName") is not None,
+    }
+
+
 def _parse_turnout(elem: etree._Element) -> TurnoutRow:
+    shape = _shape_flags(elem)
     return TurnoutRow(
         system_name=_system_name_of(elem),
         user_name=_user_name_of(elem),
@@ -263,25 +320,32 @@ def _parse_turnout(elem: etree._Element) -> TurnoutRow:
         automate=elem.get("automate") or None,
         comment=_comment_of(elem),
         extra_attribs=_extra_attribs(elem, _TURNOUT_KNOWN_ATTRS),
+        suppress_default_inverted=elem.get("inverted") is None,
+        **shape,
     )
 
 
 def _parse_sensor(elem: etree._Element) -> SensorRow:
+    shape = _shape_flags(elem)
     return SensorRow(
         system_name=_system_name_of(elem),
         user_name=_user_name_of(elem),
         inverted=_parse_bool(elem.get("inverted"), False),
         comment=_comment_of(elem),
         extra_attribs=_extra_attribs(elem, _SENSOR_KNOWN_ATTRS),
+        suppress_default_inverted=elem.get("inverted") is None,
+        **shape,
     )
 
 
 def _parse_light(elem: etree._Element) -> LightRow:
+    shape = _shape_flags(elem)
     return LightRow(
         system_name=_system_name_of(elem),
         user_name=_user_name_of(elem),
         comment=_comment_of(elem),
         extra_attribs=_extra_attribs(elem, _LIGHT_KNOWN_ATTRS),
+        **shape,
     )
 
 
@@ -336,37 +400,66 @@ def load_config_bytes(data: bytes) -> ConfigFile:
     ``<turnouts>`` / ``<sensors>`` sections come out on one gigantic
     line -- unreadable when a user tries to hand-edit the file. Safe
     for us because the file is element-only (no mixed content that
-    would care about internal whitespace)."""
+    would care about internal whitespace).
+
+    Uses ``etree.parse`` (not ``fromstring``) so document-level nodes
+    that sit before the root -- notably the ``<?xml-stylesheet ...?>``
+    PI JMRI writes on older panels -- are preserved for byte-equal
+    round-trip.
+    """
+    import io as _io   # local import so module header stays unchanged
+
     parser = etree.XMLParser(
         remove_blank_text=True,
         resolve_entities=False,
         load_dtd=False,
         no_network=True,
     )
-    root = etree.fromstring(data, parser=parser)
+    tree = etree.parse(_io.BytesIO(data), parser)
+    root = tree.getroot()
     if root.tag != "layout-config":
         raise ValueError(
             f"expected <layout-config> root, got <{root.tag}>"
         )
-    tree = root.getroottree()
     doctype: str | None = getattr(tree.docinfo, "doctype", None) or None
 
     config = ConfigFile(
         root_attribs={k: v for k, v in root.attrib.items()},
         doctype=doctype,
     )
+    # Walk the siblings that sit before the root element so any
+    # ``<?xml-stylesheet ...?>`` or other PIs round-trip. ``.getprevious``
+    # walks the previous-sibling chain; collect top-down.
+    prev_chain: list[etree._Element] = []
+    prev = root.getprevious()
+    while prev is not None:
+        prev_chain.append(prev)
+        prev = prev.getprevious()
+    for node in reversed(prev_chain):
+        tag = node.tag
+        # lxml's PI type exposes ``target`` and the attribute-blob via
+        # ``.text``; preserve both.
+        if callable(tag) and tag is etree.ProcessingInstruction:
+            target = getattr(node, "target", "") or ""
+            payload = node.text or ""
+            config.preroot_pis.append((target, payload))
     for child in root:
         if not isinstance(child.tag, str):
             config.preserved.append(child)
+            config.section_order.append("preserved")
             continue
         if child.tag == "turnouts":
             config.turnout_sections.append(_parse_turnout_section(child))
+            config.section_order.append("turnouts")
         elif child.tag == "sensors":
             config.sensor_sections.append(_parse_sensor_section(child))
+            config.section_order.append("sensors")
         elif child.tag == "lights":
             config.light_sections.append(_parse_light_section(child))
+            config.section_order.append("lights")
         else:
             config.preserved.append(child)
+            config.section_order.append("preserved")
     return config
 
 
@@ -383,34 +476,78 @@ def _set_child_text(parent: etree._Element, tag: str, text: str | None) -> None:
         etree.SubElement(parent, tag).text = text
 
 
+def _emit_bean_row(
+    parent: etree._Element,
+    row_tag: str,
+    system_name: str,
+    user_name: str | None,
+    comment: str | None,
+    attrs: dict[str, str],
+    *,
+    systemname_as_attr: bool,
+    systemname_as_child: bool,
+    username_as_attr: bool,
+    username_as_child: bool,
+) -> None:
+    """Write one ``<turnout>`` / ``<sensor>`` / ``<light>`` row,
+    honouring the per-slot shape flags so byte-equal round-trip holds.
+    """
+    if systemname_as_attr:
+        attrs["systemName"] = system_name
+    if username_as_attr and user_name:
+        attrs["userName"] = user_name
+    elem = etree.SubElement(parent, row_tag, attrib=attrs)
+    if systemname_as_child:
+        _set_child_text(elem, "systemName", system_name)
+    if user_name and username_as_child:
+        _set_child_text(elem, "userName", user_name)
+    _set_child_text(elem, "comment", comment)
+
+
 def _write_turnout(parent: etree._Element, row: TurnoutRow) -> None:
     attrs: dict[str, str] = dict(row.extra_attribs)
     if row.feedback:
         attrs["feedback"] = row.feedback
-    attrs["inverted"] = "true" if row.inverted else "false"
+    # Emit ``inverted="false"`` by default (matches JMRI 5.x fresh-row
+    # output). If the row was loaded from a file that did NOT carry an
+    # ``inverted=`` attribute, ``suppress_default_inverted`` is True and
+    # we emit nothing unless the value is actively true -- that keeps
+    # byte-equal round-trip for legacy JMRI files.
+    if row.inverted or not row.suppress_default_inverted:
+        attrs["inverted"] = "true" if row.inverted else "false"
     if row.automate:
         attrs["automate"] = row.automate
-    elem = etree.SubElement(parent, "turnout", attrib=attrs)
-    _set_child_text(elem, "systemName", row.system_name)
-    _set_child_text(elem, "userName", row.user_name)
-    _set_child_text(elem, "comment", row.comment)
+    _emit_bean_row(
+        parent, "turnout", row.system_name, row.user_name, row.comment, attrs,
+        systemname_as_attr=row.systemname_as_attr,
+        systemname_as_child=row.systemname_as_child,
+        username_as_attr=row.username_as_attr,
+        username_as_child=row.username_as_child,
+    )
 
 
 def _write_sensor(parent: etree._Element, row: SensorRow) -> None:
     attrs: dict[str, str] = dict(row.extra_attribs)
-    attrs["inverted"] = "true" if row.inverted else "false"
-    elem = etree.SubElement(parent, "sensor", attrib=attrs)
-    _set_child_text(elem, "systemName", row.system_name)
-    _set_child_text(elem, "userName", row.user_name)
-    _set_child_text(elem, "comment", row.comment)
+    if row.inverted or not row.suppress_default_inverted:
+        attrs["inverted"] = "true" if row.inverted else "false"
+    _emit_bean_row(
+        parent, "sensor", row.system_name, row.user_name, row.comment, attrs,
+        systemname_as_attr=row.systemname_as_attr,
+        systemname_as_child=row.systemname_as_child,
+        username_as_attr=row.username_as_attr,
+        username_as_child=row.username_as_child,
+    )
 
 
 def _write_light(parent: etree._Element, row: LightRow) -> None:
     attrs: dict[str, str] = dict(row.extra_attribs)
-    elem = etree.SubElement(parent, "light", attrib=attrs)
-    _set_child_text(elem, "systemName", row.system_name)
-    _set_child_text(elem, "userName", row.user_name)
-    _set_child_text(elem, "comment", row.comment)
+    _emit_bean_row(
+        parent, "light", row.system_name, row.user_name, row.comment, attrs,
+        systemname_as_attr=row.systemname_as_attr,
+        systemname_as_child=row.systemname_as_child,
+        username_as_attr=row.username_as_attr,
+        username_as_child=row.username_as_child,
+    )
 
 
 # ----- serialize: sections --------------------------------------------------
@@ -442,24 +579,62 @@ def _write_light_section(parent: etree._Element, section: LightSection) -> None:
 
 def save_config_bytes(config: ConfigFile) -> bytes:
     """Serialize a :class:`ConfigFile` back to XML bytes (JMRI 5.x shape)."""
+    import io as _io   # local import so module header stays unchanged
+
     root = etree.Element("layout-config", attrib=config.root_attribs)
-    for section in config.turnout_sections:
-        _write_turnout_section(root, section)
-    for section in config.sensor_sections:
-        _write_sensor_section(root, section)
-    for section in config.light_sections:
-        _write_light_section(root, section)
-    for elem in config.preserved:
-        root.append(elem)
-    common_kwargs: dict[str, object] = {
+
+    # Cursors into each section-kind list so we can walk
+    # ``section_order`` in document order.
+    t_i = s_i = l_i = p_i = 0
+    order = list(config.section_order) or (
+        # Backward-compat: a ConfigFile built by hand (no section_order)
+        # still serialises in the historical fixed order.
+        ["turnouts"] * len(config.turnout_sections)
+        + ["sensors"] * len(config.sensor_sections)
+        + ["lights"] * len(config.light_sections)
+        + ["preserved"] * len(config.preserved)
+    )
+    for kind in order:
+        if kind == "turnouts" and t_i < len(config.turnout_sections):
+            _write_turnout_section(root, config.turnout_sections[t_i])
+            t_i += 1
+        elif kind == "sensors" and s_i < len(config.sensor_sections):
+            _write_sensor_section(root, config.sensor_sections[s_i])
+            s_i += 1
+        elif kind == "lights" and l_i < len(config.light_sections):
+            _write_light_section(root, config.light_sections[l_i])
+            l_i += 1
+        elif kind == "preserved" and p_i < len(config.preserved):
+            root.append(config.preserved[p_i])
+            p_i += 1
+    # Flush anything new that was appended after the file was first
+    # loaded (CRUD services on a bare ConfigFile with no section_order).
+    while t_i < len(config.turnout_sections):
+        _write_turnout_section(root, config.turnout_sections[t_i]); t_i += 1
+    while s_i < len(config.sensor_sections):
+        _write_sensor_section(root, config.sensor_sections[s_i]); s_i += 1
+    while l_i < len(config.light_sections):
+        _write_light_section(root, config.light_sections[l_i]); l_i += 1
+    while p_i < len(config.preserved):
+        root.append(config.preserved[p_i]); p_i += 1
+
+    # Wrap in an ElementTree so document-level PIs added via
+    # ``addprevious`` on the root actually serialise. ``etree.tostring``
+    # on a bare element ignores siblings; ``tree.write`` honours them.
+    tree = etree.ElementTree(root)
+    for target, payload in config.preroot_pis:
+        root.addprevious(etree.ProcessingInstruction(target, payload))
+    buf = _io.BytesIO()
+    write_kwargs: dict[str, object] = {
         "xml_declaration": True,
         "encoding": "utf-8",
         "pretty_print": True,
         "standalone": False,
     }
     if config.doctype:
-        common_kwargs["doctype"] = config.doctype
-    return etree.tostring(root, **common_kwargs)
+        write_kwargs["doctype"] = config.doctype
+    tree.write(buf, **write_kwargs)
+    return buf.getvalue()
 
 
 def save_config(path: str | pathlib.Path, config: ConfigFile) -> None:

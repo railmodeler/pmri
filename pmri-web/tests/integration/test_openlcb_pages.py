@@ -287,14 +287,16 @@ async def test_openlcb_nodes_refresh_returns_fragment(olcb_web) -> None:
 
 
 async def test_openlcb_home_auto_polls_nodes_fragment(olcb_web) -> None:
-    """Home page renders an htmx auto-poll on the nodes fragment
-    pointing at the refresh endpoint."""
+    """Home page refetches the nodes fragment on the ``pmri:openlcb``
+    nudge rather than polling on a fixed interval (migration from
+    ``every 5s`` to the WebSocket nudge channel)."""
     tc, _, _ = olcb_web
     r = await tc.get("/openlcb")
     r.raise_for_status()
     body = r.text
     assert 'hx-get="/openlcb/nodes/refresh"' in body
-    assert 'hx-trigger="every 5s"' in body
+    assert 'hx-trigger="pmri:openlcb from:body"' in body
+    assert "every 5s" not in body
 
 
 async def test_openlcb_home_shows_bus_health_card(olcb_web) -> None:
@@ -1404,18 +1406,18 @@ async def test_monitor_sse_generator_pushes_refresh_on_frame(olcb_web) -> None:
     await it.aclose()
 
 
-async def test_monitor_page_wires_sse_and_polling_fallback(olcb_web) -> None:
-    """Home page renders both the SSE subscription (via inline
-    script) and the every-2s polling trigger -- the poll remains as
-    a safety net when SSE isn't available."""
+async def test_monitor_page_refetches_on_openlcb_nudge(olcb_web) -> None:
+    """The monitor page refetches on the ``pmri:openlcb`` WebSocket
+    nudge instead of polling every 2 s + a parallel SSE subscription.
+    The old inline ``EventSource(...)`` wiring has been removed."""
     tc, _, _ = olcb_web
     r = await tc.get("/openlcb/monitor")
     r.raise_for_status()
     body = r.text
-    assert 'EventSource("/openlcb/monitor/sse")' in body
-    assert "olcb-sse-nudge from:body" in body
-    # Fallback poll still present.
-    assert 'hx-trigger="every 2s, olcb-sse-nudge from:body"' in body
+    assert 'hx-trigger="pmri:openlcb from:body"' in body
+    assert "every 2s" not in body
+    assert "olcb-sse-nudge" not in body
+    assert 'EventSource("/openlcb/monitor/sse")' not in body
 
 
 async def test_monitor_export_session_returns_zip_with_csv_and_metadata(olcb_web) -> None:

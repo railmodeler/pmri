@@ -59,6 +59,15 @@ header nav a {
 header nav a:hover { background: var(--surface-hi); }
 header nav a.active { background: var(--accent-dim); color: var(--accent); }
 
+/* Content-area links. Browser default (purple/blue) has brutal contrast
+   on the dark theme; theme them against --accent so they pop against
+   the surface + body backgrounds. Visited links drop to a dimmer tone
+   to hint "already clicked" without losing contrast. */
+a { color: var(--accent); text-decoration: underline; }
+a:visited { color: #80d8ff; }
+a:hover { color: #b9efff; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* Right-side cluster (railroad · version · user badge · logout).
    Wrapped in one flex container so ``margin-left: auto`` moves the
    whole group together — otherwise a wrapping header shows the
@@ -693,3 +702,92 @@ table.cv-variables th, table.cv-variables td {
 .speed-slider-cell.frozen .speed-slider-value {
     text-decoration: underline;
 }
+
+/* ===== Panel Canvas editor ======================================= */
+
+.panel-editor-shell {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 7rem);
+    min-height: 32em;
+    gap: 0.4rem;
+}
+.panel-editor-topbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--card-bg, #fafafa);
+    border: 1px solid var(--muted, #ccc);
+    border-radius: 4px;
+}
+.panel-editor-topbar .panel-editor-status {
+    color: var(--muted, #666);
+    font-size: 0.85rem;
+    font-family: monospace;
+}
+.panel-editor-main {
+    display: grid;
+    grid-template-columns: 9em 1fr 16em;
+    gap: 0.4rem;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.panel-editor-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.4rem;
+    background: var(--card-bg, #fafafa);
+    border: 1px solid var(--muted, #ccc);
+    border-radius: 4px;
+    overflow-y: auto;
+}
+.panel-editor-toolbar button {
+    text-align: left;
+}
+.panel-editor-toolbar button.is-active {
+    background: var(--accent, #2a6);
+    color: #fff;
+    border-color: var(--accent, #2a6);
+}
+.panel-editor-toolbar hr {
+    border: 0;
+    border-top: 1px solid var(--muted, #ccc);
+    margin: 0.2rem 0;
+}
+.panel-editor-canvas-wrap {
+    position: relative;
+    background: #fff;
+    border: 1px solid var(--muted, #ccc);
+    border-radius: 4px;
+    overflow: hidden;
+    min-width: 0;
+}
+.panel-editor-canvas-wrap canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    outline: none;
+}
+.panel-editor-drawer {
+    padding: 0.5rem;
+    background: var(--card-bg, #fafafa);
+    border: 1px solid var(--muted, #ccc);
+    border-radius: 4px;
+    overflow-y: auto;
+}
+.panel-editor-drawer strong {
+    display: block;
+    margin-bottom: 0.4rem;
+}
+@media (max-width: 800px) {
+    .panel-editor-main {
+        grid-template-columns: 8em 1fr;
+    }
+    .panel-editor-drawer {
+        display: none;
+    }
+}
+

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Panel Editor: {{ name }}{% endblock %}
+{% block content %}
+<div class="panel-editor-shell" data-panel="{{ name }}"
+     data-width="{{ width }}" data-height="{{ height }}">
+  <div class="panel-editor-topbar">
+    <a href="/panel">&larr; All panels</a>
+    <a href="/panels/{{ name }}">Viewer</a>
+    <strong class="mono">Panel: {{ name }}</strong>
+    <span class="panel-editor-status" data-role="status">loading...</span>
+    <span style="margin-left:auto"></span>
+    <label class="small muted" title="Panel width in pixels">W
+      <input type="number" data-role="panel-width" min="100" max="16384"
+             value="{{ width }}" style="width:5.5em" />
+    </label>
+    <label class="small muted" title="Panel height in pixels">H
+      <input type="number" data-role="panel-height" min="100" max="16384"
+             value="{{ height }}" style="width:5.5em" />
+    </label>
+    <button type="button" data-role="apply-size">Apply</button>
+    <span class="mono small" data-role="zoom-readout">100%</span>
+    <button type="button" data-role="zoom-out" title="Zoom out">-</button>
+    <button type="button" data-role="zoom-reset" title="Reset view">1&times;</button>
+    <button type="button" data-role="zoom-in" title="Zoom in">+</button>
+  </div>
+
+  <div class="panel-editor-main">
+    <div class="panel-editor-toolbar">
+      <strong class="small">Tool</strong>
+      <button type="button" data-tool="select" class="is-active">Select</button>
+      <button type="button" data-tool="pan">Pan</button>
+      <strong class="small">Track</strong>
+      <button type="button" data-tool="add-point" title="Add anchor">Point</button>
+      <button type="button" data-tool="add-segment" title="Draw a track segment: click two points">Segment</button>
+      <button type="button" data-tool="add-turnout" title="Add a right-hand turnout">Turnout</button>
+      <strong class="small">Icons</strong>
+      <button type="button" data-tool="add-sensor-icon" title="Place a sensor icon">Sensor</button>
+      <button type="button" data-tool="add-turnout-icon" title="Place a turnout icon">Turnout icon</button>
+      <button type="button" data-tool="add-signal-icon" title="Place a signal-mast icon">Signal</button>
+      <button type="button" data-tool="add-memory-icon" title="Place a memory icon">Memory</button>
+      <hr>
+      <button type="button" data-action="delete" title="Delete selected">Delete</button>
+    </div>
+
+    <div class="panel-editor-canvas-wrap">
+      <canvas data-role="canvas" tabindex="0"></canvas>
+    </div>
+
+    <aside class="panel-editor-drawer" data-role="drawer">
+      <strong>Selection</strong>
+      <div data-role="drawer-body" class="muted small">Nothing selected.</div>
+    </aside>
+  </div>
+</div>
+
+<script type="module" src="/static/panel_canvas.js"></script>
+{% endblock %}
