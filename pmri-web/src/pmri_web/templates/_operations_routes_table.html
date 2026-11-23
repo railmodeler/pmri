@@ -1,0 +1,38 @@
+<table id="operations-routes-table"
+       hx-get="/operations/routes/refresh"
+       hx-trigger="pmri:operations-routes from:body"
+       hx-target="#operations-routes-table" hx-swap="outerHTML">
+  <thead>
+    <tr><th>Name</th><th>Direction</th><th>Kind</th><th>Stops</th>
+        <th>Comment</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% if create_error %}
+    <tr><td colspan="6" class="danger">{{ create_error }}</td></tr>
+    {% endif %}
+    {% for r in routes %}
+    <tr data-route="{{ r.id }}">
+      <td>{{ r.name or r.id }}</td>
+      <td class="small">
+        {% if r.direction == "EW" %}East / West{% elif r.direction == "NS" %}North / South{% else %}&mdash;{% endif %}
+        {% if r.superior_direction %}
+          <span class="muted">({{ r.superior_direction }})</span>
+        {% endif %}
+      </td>
+      <td class="small">{% if r.is_branch == "true" %}Branch{% else %}Main{% endif %}</td>
+      <td class="mono">{{ r.locations | selectattr("station_id") | list | length }}</td>
+      <td class="small">{{ r.comment }}</td>
+      <td>
+        <a href="/operations/routes/{{ r.id }}/edit" class="button">Edit</a>
+        <button class="danger"
+                hx-delete="/operations/routes/{{ r.id }}"
+                hx-target="#operations-routes-table" hx-swap="outerHTML"
+                hx-confirm="Delete route {{ r.name or r.id }}?">Delete</button>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not routes %}
+    <tr><td colspan="6" class="muted">No routes yet — add one above.</td></tr>
+    {% endif %}
+  </tbody>
+</table>

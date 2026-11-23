@@ -1,0 +1,33 @@
+{% set _e = e %}
+<tr data-engine="{{ _e.id }}" class="operations-edit-row">
+  <td class="mono">{{ _e.id }}
+    <input type="hidden" name="id" value="{{ _e.id }}" /></td>
+  <td><input type="text" name="roadName" value="{{ _e.road_name }}"
+             style="width:6em"
+             hx-post="/operations/engines/{{ _e.id }}/update"
+             hx-trigger="keydown[key=='Enter']"
+             hx-include="closest tr"
+             hx-target="closest tr" hx-swap="outerHTML" /></td>
+  <td><input type="text" name="roadNumber" value="{{ _e.road_number }}" style="width:7em" /></td>
+  <td><input type="text" name="model" value="{{ _e.model }}" style="width:8em" /></td>
+  <td><input type="text" name="type" value="{{ _e.type }}" style="width:7em" /></td>
+  <td><input type="text" name="length" value="{{ _e.length }}" style="width:5em" /></td>
+  <td>
+    <select name="locationId" style="width:12em">
+      <option value="">(none)</option>
+      {% for s in (stations or []) %}
+      <option value="{{ s.id }}" {% if _e.location_id == s.id %}selected{% endif %}>
+        {{ s.name or s.id }}
+      </option>
+      {% endfor %}
+    </select></td>
+  <td>
+    <button type="button"
+            hx-post="/operations/engines/{{ _e.id }}/update"
+            hx-include="closest tr"
+            hx-target="closest tr" hx-swap="outerHTML">Save</button>
+    <button type="button"
+            hx-get="/operations/engines/{{ _e.id }}/row"
+            hx-target="closest tr" hx-swap="outerHTML">Cancel</button>
+  </td>
+</tr>

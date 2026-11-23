@@ -1,0 +1,22 @@
+{# Refreshes on the ``operations-cars`` WebSocket nudge fired by
+   mutation routes. Peer edits land live without client polling. #}
+<table id="operations-cars-table"
+       hx-get="/operations/cars/refresh"
+       hx-trigger="pmri:operations-cars from:body"
+       hx-target="#operations-cars-table" hx-swap="outerHTML">
+  <thead>
+    <tr>
+      <th>ID</th><th>Road</th><th>Number</th><th>Type</th>
+      <th>Length</th><th>Load</th><th>Location</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if create_error %}
+    <tr><td colspan="8" class="danger">{{ create_error }}</td></tr>
+    {% endif %}
+    {% for c in cars %}{% include "_operations_car_row.html" %}{% endfor %}
+    {% if not cars %}
+    <tr><td colspan="8" class="muted">No cars yet — add one above.</td></tr>
+    {% endif %}
+  </tbody>
+</table>

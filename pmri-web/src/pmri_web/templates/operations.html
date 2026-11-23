@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Operations Pro{% endblock %}
+{% block content %}
+<h2>Operations Pro</h2>
+<p class="muted small">
+  Freight-car operations: maintain rosters of cars, engines, and
+  locations. Routes, trains, and the build-train algorithm land in
+  later phases.
+</p>
+
+<div class="card">
+  <h3>Rosters</h3>
+  <ul>
+    <li><a href="/operations/cars">Cars</a>
+      <span class="muted small">— rolling stock inventory</span></li>
+    <li><a href="/operations/engines">Engines</a>
+      <span class="muted small">— locomotive inventory</span></li>
+    <li><a href="/operations/stations">Stations</a>
+      <span class="muted small">— operation points on the railroad; parent of locations</span></li>
+    <li><a href="/operations/locations">Locations</a>
+      <span class="muted small">— yards, sidings, interchange tracks at a station</span></li>
+    <li><a href="/operations/routes">Routes</a>
+      <span class="muted small">— ordered station sequences</span></li>
+    <li><a href="/operations/trains">Trains</a>
+      <span class="muted small">— route + schedule assignments</span></li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Reports</h3>
+  <ul>
+    <li><a href="/operations/timetable">Timetable</a>
+      <span class="muted small">— printable schedule of all trains with stop times</span></li>
+  </ul>
+</div>
+{% endblock %}

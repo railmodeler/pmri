@@ -1,0 +1,20 @@
+<table id="operations-engines-table"
+       hx-get="/operations/engines/refresh"
+       hx-trigger="pmri:operations-engines from:body"
+       hx-target="#operations-engines-table" hx-swap="outerHTML">
+  <thead>
+    <tr>
+      <th>ID</th><th>Road</th><th>Number</th><th>Model</th>
+      <th>Type</th><th>Length</th><th>Station</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if create_error %}
+    <tr><td colspan="8" class="danger">{{ create_error }}</td></tr>
+    {% endif %}
+    {% for e in engines %}{% include "_operations_engine_row.html" %}{% endfor %}
+    {% if not engines %}
+    <tr><td colspan="8" class="muted">No engines yet — add one above.</td></tr>
+    {% endif %}
+  </tbody>
+</table>

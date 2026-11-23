@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Engines — Operations Pro{% endblock %}
+{% block content %}
+<h2>Engines</h2>
+<p><a href="/operations">&larr; Operations Pro</a></p>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between;align-items:baseline;flex-wrap:wrap">
+    <h3 style="margin:0">Import from roster</h3>
+    <span class="muted small">
+      Add an engine for every locomotive in the active profile's roster
+      (skipping ids that already exist as engines).
+    </span>
+  </div>
+  <form hx-post="/operations/engines/import_roster"
+        hx-target="#operations-engines-table" hx-swap="outerHTML">
+    <button type="submit">Import from roster</button>
+    <span id="import-roster-status" class="muted small" style="margin-left:0.5rem"></span>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Add an engine</h3>
+  <form hx-post="/operations/engines/create"
+        hx-target="#operations-engines-table" hx-swap="outerHTML"
+        class="row" style="gap:0.5rem; flex-wrap:wrap; align-items:baseline">
+    <label>ID
+      <input type="text" name="id" required pattern="[A-Za-z0-9_.:-]+"
+             placeholder="eng-1" style="width:8em" /></label>
+    <label>Road
+      <input type="text" name="roadName" placeholder="SP" style="width:6em" /></label>
+    <label>Number
+      <input type="text" name="roadNumber" placeholder="4449" style="width:7em" /></label>
+    <label>Model
+      <input type="text" name="model" placeholder="FEF-3" style="width:8em" /></label>
+    <label>Type
+      <input type="text" name="type" placeholder="Steam" style="width:7em" /></label>
+    <label>Length
+      <input type="text" name="length" placeholder="100" style="width:5em" /></label>
+    <label>Station
+      <select name="locationId" style="width:12em">
+        <option value="">(none)</option>
+        {% for s in stations %}
+        <option value="{{ s.id }}">{{ s.name or s.id }}</option>
+        {% endfor %}
+      </select></label>
+    <button type="submit">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  {% include "_operations_engines_table.html" %}
+</div>
+{% endblock %}

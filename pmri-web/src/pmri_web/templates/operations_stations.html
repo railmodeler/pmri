@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Stations — Operations Pro{% endblock %}
+{% block content %}
+<h2>Stations</h2>
+<p><a href="/operations">&larr; Operations Pro</a></p>
+
+<div class="card">
+  <h3>Add a station</h3>
+  <p class="muted small" style="margin-top:-0.4rem">
+    A station is an operations point on the railroad — the place a
+    train stops. Each station contains one or more
+    <a href="/operations/locations">Locations</a> (yard tracks,
+    spurs, interchanges) representing the industries or tracks
+    served there.
+  </p>
+  <form hx-post="/operations/stations/create"
+        hx-target="#operations-stations-table" hx-swap="outerHTML"
+        class="row" style="gap:0.5rem; flex-wrap:wrap; align-items:baseline">
+    <label>ID
+      <input type="text" name="id" required pattern="[A-Za-z0-9_.:-]+"
+             placeholder="oakland" style="width:8em" /></label>
+    <label>Name
+      <input type="text" name="name" placeholder="Oakland"
+             style="width:12em" /></label>
+    <label>Facilities
+      <input type="text" name="facilities" placeholder="TGCWT"
+             style="width:8em"
+             title="Letter code for amenities (e.g. T=telegraph, G=coal, W=water, T=turntable)." /></label>
+    <label>Siding cap.
+      <input type="number" name="sidingCapacity" min="0" max="999"
+             style="width:5em" placeholder="—"
+             title="Cars the passing siding holds; blank if no siding." /></label>
+    <button type="submit">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  {% include "_operations_stations_table.html" %}
+</div>
+{% endblock %}

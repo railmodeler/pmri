@@ -1,0 +1,83 @@
+{# Per-stop schedule fragment used by the train edit page.
+   Lives in its own file so a direction change can re-fetch just
+   this table without a full page reload. #}
+{% if schedule_rows %}
+<table id="train-schedule-table">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Include</th>
+      <th>Location</th>
+      <th>Miles</th>
+      <th>Depart</th>
+      <th>Wait<br><span class="muted small">(min)</span></th>
+      <th class="small">Where</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in schedule_rows %}
+    <tr data-schedule-row
+        data-miles="{{ row.miles or 0 }}"
+        data-origin="{{ row.origin }}">
+      <td class="mono">{{ loop.index }}</td>
+      <td>
+        <input type="hidden" name="stop_stationId" value="{{ row.station_id }}" />
+        {% if row.origin in ("mainline-before", "mainline-after") %}
+        <input type="hidden" name="stop_include"
+               value="{{ 'true' if row.included else '' }}"
+               data-include-hidden />
+        <input type="checkbox" data-included
+               {% if row.included %}checked{% endif %} />
+        {% else %}
+        <input type="hidden" name="stop_include" value="true" />
+        <span class="muted small" title="Required route stop">&#10003;</span>
+        {% endif %}
+      </td>
+      <td>{{ row.name }}
+        {% if row.origin == "mainline-before" %}
+        <span class="muted small">(main, before branch)</span>
+        {% elif row.origin == "mainline-after" %}
+        <span class="muted small">(main, after branch)</span>
+        {% endif %}
+      </td>
+      <td class="mono" data-cell-miles>{{ row.miles }}</td>
+      <td class="mono stop-depart"
+          data-h="{{ row.depart_hour }}"
+          data-m="{{ row.depart_minute }}">
+        <input type="hidden" name="stop_departHour"
+               value="{{ row.depart_hour }}" data-canonical="h" />
+        <input type="hidden" name="stop_departMinute"
+               value="{{ row.depart_minute }}" data-canonical="m" />
+        <span class="face-24h">
+          <input type="number" min="0" max="23"
+                 style="width:4.5em" data-face="24h-h" />
+          :
+          <input type="number" min="0" max="59"
+                 style="width:4.5em" data-face="24h-m" />
+        </span>
+        <span class="face-12h" style="display:none">
+          <input type="number" min="1" max="12"
+                 style="width:4.5em" data-face="12h-h" />
+          :
+          <input type="number" min="0" max="59"
+                 style="width:4.5em" data-face="12h-m" />
+          <select data-face="12h-ap">
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </span>
+      </td>
+      <td class="mono">
+        <input type="number" name="stop_wait"
+               value="{{ row.wait }}" min="0" max="999"
+               style="width:4.5em" data-wait /></td>
+      <td class="small muted">{{ row.where }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted small">
+  Pick a route under Identity to generate the per-stop schedule.
+</p>
+{% endif %}

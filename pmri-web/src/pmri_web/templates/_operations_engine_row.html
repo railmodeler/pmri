@@ -1,0 +1,20 @@
+{% set _e = e %}
+{% set _stn_names = station_name_by_id or {} %}
+<tr data-engine="{{ _e.id }}">
+  <td class="mono">{{ _e.id }}</td>
+  <td>{{ _e.road_name }}</td>
+  <td>{{ _e.road_number }}</td>
+  <td>{{ _e.model }}</td>
+  <td>{{ _e.type }}</td>
+  <td>{{ _e.length }}</td>
+  <td>{{ _stn_names.get(_e.location_id, _e.location_id) }}</td>
+  <td>
+    <button type="button"
+            hx-get="/operations/engines/{{ _e.id }}/edit"
+            hx-target="closest tr" hx-swap="outerHTML">Edit</button>
+    <button class="danger"
+            hx-delete="/operations/engines/{{ _e.id }}"
+            hx-target="#operations-engines-table" hx-swap="outerHTML"
+            hx-confirm="Delete engine {{ _e.id }}?">Delete</button>
+  </td>
+</tr>

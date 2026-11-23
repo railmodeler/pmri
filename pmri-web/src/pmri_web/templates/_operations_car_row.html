@@ -1,0 +1,20 @@
+{% set _c = c %}
+{% set _loc_names = location_name_by_id or {} %}
+<tr data-car="{{ _c.id }}">
+  <td class="mono">{{ _c.id }}</td>
+  <td>{{ _c.road_name }}</td>
+  <td>{{ _c.road_number }}</td>
+  <td>{{ _c.type }}</td>
+  <td>{{ _c.length }}</td>
+  <td>{{ _c.load }}</td>
+  <td>{{ _loc_names.get(_c.location_id, _c.location_id) }}</td>
+  <td>
+    <button type="button"
+            hx-get="/operations/cars/{{ _c.id }}/edit"
+            hx-target="closest tr" hx-swap="outerHTML">Edit</button>
+    <button class="danger"
+            hx-delete="/operations/cars/{{ _c.id }}"
+            hx-target="#operations-cars-table" hx-swap="outerHTML"
+            hx-confirm="Delete car {{ _c.id }}?">Delete</button>
+  </td>
+</tr>

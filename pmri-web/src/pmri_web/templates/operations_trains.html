@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "_operations_depart_time.html" import depart_time_widget, depart_time_script %}
+{% block title %}Trains — Operations Pro{% endblock %}
+{% block content %}
+<h2>Trains</h2>
+<p><a href="/operations">&larr; Operations Pro</a>
+   &middot; <a href="/operations/timetable">View timetable &rarr;</a></p>
+
+<div class="card">
+  <h3>Add a train</h3>
+  <form hx-post="/operations/trains/create"
+        hx-target="#operations-trains-table" hx-swap="outerHTML"
+        class="row" style="gap:0.5rem; flex-wrap:wrap; align-items:baseline">
+    <label>ID
+      <input type="text" name="id" required pattern="[A-Za-z0-9_.:-]+"
+             placeholder="t-1" style="width:8em" /></label>
+    <label>Name
+      <input type="text" name="name" placeholder="Local 101" style="width:12em" /></label>
+    <label>Description
+      <input type="text" name="description" placeholder="Daily local" style="width:18em" /></label>
+    <label>Route
+      <select name="route" style="width:14em">
+        <option value="">(none)</option>
+        {% for r in routes %}
+        <option value="{{ r.id }}">{{ r.name or r.id }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Type
+      <select name="trainType" style="width:10em">
+        <option value="">(unset)</option>
+        <option value="Passenger">Passenger</option>
+        <option value="Freight">Freight</option>
+        <option value="Mixed">Mixed</option>
+        <option value="Through">Through</option>
+      </select></label>
+    <label>Class
+      <select name="trainClass" style="width:8em">
+        <option value="">(unset)</option>
+        <option value="1">Class 1</option>
+        <option value="2">Class 2</option>
+        <option value="3">Class 3</option>
+        <option value="X">Extra</option>
+      </select></label>
+    <span style="display:inline-flex;align-items:baseline;gap:0.4rem">
+      <span class="muted small">Depart</span>
+      {{ depart_time_widget("create", "", "") }}
+    </span>
+    <button type="submit">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  {% include "_operations_trains_table.html" %}
+</div>
+
+{{ depart_time_script() }}
+{% endblock %}

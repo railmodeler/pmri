@@ -1,0 +1,42 @@
+{# HTML5 forbids <form> as a direct child of <tr>; use hx-post +
+   hx-include="closest tr" on the Save button, same pattern as the
+   turnouts edit row. Enter in a text input also submits. #}
+{% set _c = c %}
+<tr data-car="{{ _c.id }}" class="operations-edit-row">
+  <td class="mono">{{ _c.id }}
+    <input type="hidden" name="id" value="{{ _c.id }}" /></td>
+  <td><input type="text" name="roadName" value="{{ _c.road_name }}"
+             style="width:6em"
+             hx-post="/operations/cars/{{ _c.id }}/update"
+             hx-trigger="keydown[key=='Enter']"
+             hx-include="closest tr"
+             hx-target="closest tr" hx-swap="outerHTML" /></td>
+  <td><input type="text" name="roadNumber" value="{{ _c.road_number }}" style="width:7em" /></td>
+  <td>
+    <select name="type" style="width:10em">
+      <option value="">(unset)</option>
+      {% for t, _in_roster in (car_types_catalog or []) %}
+      <option value="{{ t }}" {% if _c.type == t %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select></td>
+  <td><input type="text" name="length" value="{{ _c.length }}" style="width:5em" /></td>
+  <td><input type="text" name="load" value="{{ _c.load }}" style="width:4em" /></td>
+  <td>
+    <select name="locationId" style="width:12em">
+      <option value="">(none)</option>
+      {% for l in (locations or []) %}
+      <option value="{{ l.id }}" {% if _c.location_id == l.id %}selected{% endif %}>
+        {{ l.name or l.id }}
+      </option>
+      {% endfor %}
+    </select></td>
+  <td>
+    <button type="button"
+            hx-post="/operations/cars/{{ _c.id }}/update"
+            hx-include="closest tr"
+            hx-target="closest tr" hx-swap="outerHTML">Save</button>
+    <button type="button"
+            hx-get="/operations/cars/{{ _c.id }}/row"
+            hx-target="closest tr" hx-swap="outerHTML">Cancel</button>
+  </td>
+</tr>

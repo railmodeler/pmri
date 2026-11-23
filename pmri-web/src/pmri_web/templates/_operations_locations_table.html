@@ -1,0 +1,21 @@
+<table id="operations-locations-table"
+       hx-get="/operations/locations/refresh"
+       hx-trigger="pmri:operations-locations from:body, pmri:operations-cars from:body"
+       hx-target="#operations-locations-table" hx-swap="outerHTML">
+  <thead>
+    <tr>
+      <th>Name</th><th>Station</th><th>Kind</th><th>Dir</th>
+      <th>Length</th><th>Cars</th><th>Types</th>
+      <th>Comment</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if create_error %}
+    <tr><td colspan="9" class="danger">{{ create_error }}</td></tr>
+    {% endif %}
+    {% for l in locations %}{% include "_operations_location_row.html" %}{% endfor %}
+    {% if not locations %}
+    <tr><td colspan="9" class="muted">No locations yet — add one above.</td></tr>
+    {% endif %}
+  </tbody>
+</table>

@@ -1445,6 +1445,2017 @@ def install_template_routes(
         await _dispatch(handle, type="roster", method="delete", data={"id": entry_id})
         return HTMLResponse("")
 
+    # ----- Operations Pro --------------------------------------------------
+    #
+    # Each roster (cars / engines / locations) is a thin CRUD table over
+    # its matching JSON topic. Mutations fire a ``_nudge(<topic>)`` so
+    # other viewers refresh via the WebSocket push channel rather than
+    # polling.
+
+    def _ops_rosters_project(rows: list[dict[str, Any]], model_cls) -> list[Any]:
+        """Hydrate wire-shape dicts from the JSON topic back into their
+        Pydantic model so templates can use ``.road_name`` / ``.location_id``
+        (the Python side's snake_case) instead of the alias-form keys."""
+        from pmri_core.persistence.operations_xml import _elem_to_model  # noqa: PLC0415,F401
+        out = []
+        for row in rows:
+            init: dict[str, Any] = {"extra": {}}
+            known = set(model_cls.model_fields)
+            aliases = {
+                (info.alias or n): n
+                for n, info in model_cls.model_fields.items()
+            }
+            for k, v in row.items():
+                if k in known or k in aliases:
+                    init[k] = v
+                else:
+                    init["extra"][k] = str(v)
+            out.append(model_cls.model_validate(init))
+        return out
+
+    def _tt_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(str(value or "").strip())
+        except (TypeError, ValueError):
+            return default
+
+    def _tt_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(str(value or "").strip())
+        except (TypeError, ValueError):
+            return default
+
+    def _tt_wrap(hour: int, minute: int) -> tuple[int, int]:
+        hour += minute // 60
+        minute = minute % 60
+        hour = hour % 24
+        return hour, minute
+
+    def _tt_fmt24(hour: int, minute: int) -> str:
+        return f"{hour:02d}:{minute:02d}"
+
+    def _compute_scheduled_trains(
+        *, trains: list[Any], routes_by_id: dict[str, Any],
+        stations_by_id: dict[str, Any], type_filter: str,
+    ) -> tuple[list[dict[str, Any]], list[Any]]:
+        """Build each train's per-stop time schedule.
+
+        Each train's schedule is driven first by its ``stops`` list
+        (per-TrainStop ``departHour`` / ``departMinute`` / ``wait``).
+        When those are absent the fallback walks the route by miles +
+        ``average_speed`` from the train's ``depart_hour`` /
+        ``depart_minute``. Route stops carry the per-route metadata
+        (miles, stop_type, pickups, drops, max_car_moves); the
+        Station carries the fixed facilities + siding capacity.
+        """
+        scheduled: list[dict[str, Any]] = []
+        unscheduled: list[Any] = []
+        for train in trains:
+            if type_filter and train.train_type != type_filter:
+                continue
+            route = routes_by_id.get(train.route_id) if train.route_id else None
+            if route is None:
+                unscheduled.append(train)
+                continue
+            by_stn = {
+                (s.station_id or ""): s for s in getattr(train, "stops", [])
+            }
+            # Determine travel direction: superior unless the train
+            # carries an explicit direction that's the opposite.
+            train_superior = (route.superior_direction or "").upper()
+            train_dir = (train.direction or "").upper()
+            is_inferior = bool(
+                train_superior and train_dir and train_dir != train_superior,
+            )
+            route_station_ids = [
+                rl.station_id for rl in route.locations if rl.station_id
+            ]
+            if is_inferior:
+                route_station_ids = list(reversed(route_station_ids))
+            if by_stn:
+                sequence = []
+                seen: set[str] = set()
+                for ts in train.stops:
+                    if not ts.station_id or ts.station_id in seen:
+                        continue
+                    sequence.append(ts.station_id)
+                    seen.add(ts.station_id)
+                # Fall through to any route-only stops the train doesn't
+                # have a TrainStop for, in TRAVEL order.
+                for sid in route_station_ids:
+                    if sid and sid not in seen:
+                        sequence.append(sid)
+                        seen.add(sid)
+            else:
+                sequence = list(route_station_ids)
+
+            route_rl_by_stn = {
+                rl.station_id: rl for rl in route.locations
+                if rl.station_id
+            }
+            # Superior-order index of each stop, so we can decide which
+            # of two adjacent travel-stops holds the authoritative
+            # "miles" value (it lives on the later-in-superior stop).
+            superior_index = {
+                sid: i for i, sid in enumerate(
+                    rl.station_id for rl in route.locations if rl.station_id
+                )
+            }
+
+            if by_stn and sequence:
+                first_ts = by_stn.get(sequence[0])
+                if first_ts and (first_ts.depart_hour or first_ts.depart_minute):
+                    start_h = _tt_int(first_ts.depart_hour)
+                    start_m = _tt_int(first_ts.depart_minute)
+                else:
+                    start_h = _tt_int(train.depart_hour)
+                    start_m = _tt_int(train.depart_minute)
+            else:
+                if not train.depart_hour and not train.depart_minute:
+                    unscheduled.append(train)
+                    continue
+                start_h = _tt_int(train.depart_hour)
+                start_m = _tt_int(train.depart_minute)
+
+            speed = _tt_float(train.average_speed, 0.0)
+            stops: list[dict[str, Any]] = []
+            cur_h, cur_m = start_h, start_m
+            for idx, sid in enumerate(sequence):
+                ts = by_stn.get(sid)
+                rl = route_rl_by_stn.get(sid)
+                # "miles" on a RouteLocation is distance from the
+                # previous stop IN SUPERIOR ORDER. For a train in
+                # that direction it's just this stop's miles. For an
+                # inferior-direction train, the segment distance
+                # travelling from sequence[idx-1] to sequence[idx] is
+                # stored on whichever of the two stops is later in
+                # superior order (because that's the one whose miles
+                # field represents the AB gap).
+                if idx == 0:
+                    miles = 0.0
+                else:
+                    prev_sid = sequence[idx - 1]
+                    sup_a = superior_index.get(prev_sid, -1)
+                    sup_b = superior_index.get(sid, -1)
+                    if sup_a >= 0 and sup_b >= 0:
+                        later = prev_sid if sup_a > sup_b else sid
+                        later_rl = route_rl_by_stn.get(later)
+                        miles = _tt_float(
+                            getattr(later_rl, "miles", "") if later_rl else "",
+                            0.0,
+                        )
+                    else:
+                        miles = _tt_float(
+                            getattr(rl, "miles", "") if rl else "", 0.0,
+                        )
+                # Arrive at this stop is always computed from the
+                # previous stop's departure plus travel time (miles /
+                # speed). Origin has no travel.
+                if idx == 0:
+                    arrive_h, arrive_m = cur_h, cur_m
+                elif speed > 0 and miles > 0:
+                    travel = int(round((miles / speed) * 60))
+                    arrive_h, arrive_m = _tt_wrap(cur_h, cur_m + travel)
+                else:
+                    arrive_h, arrive_m = cur_h, cur_m
+                # Depart from this stop: a TrainStop.depart overrides
+                # the computed depart = arrive + wait. Operators edit
+                # the depart time per stop directly in the train
+                # editor; the derived "wait" equals depart - arrive.
+                if ts and (ts.depart_hour or ts.depart_minute):
+                    depart_h2, depart_m2 = _tt_wrap(
+                        _tt_int(ts.depart_hour), _tt_int(ts.depart_minute),
+                    )
+                    wait = (
+                        (depart_h2 - arrive_h) * 60
+                        + (depart_m2 - arrive_m)
+                    ) % 1440
+                else:
+                    wait = _tt_int(ts.wait if ts else "", 0)
+                    depart_h2, depart_m2 = _tt_wrap(
+                        arrive_h, arrive_m + wait,
+                    )
+                station = stations_by_id.get(sid)
+                stops.append({
+                    "name": station.name if station else sid,
+                    "station_id": sid,
+                    "miles": miles,
+                    "stop_type": getattr(rl, "stop_type", "") if rl else "",
+                    "facilities": station.facilities if station else "",
+                    "siding_capacity": (
+                        station.siding_capacity if station else ""
+                    ),
+                    "arrive_h": arrive_h, "arrive_m": arrive_m,
+                    "arrive_display": _tt_fmt24(arrive_h, arrive_m),
+                    "arrive_minutes": arrive_h * 60 + arrive_m,
+                    "wait": wait,
+                    "depart_h": depart_h2, "depart_m": depart_m2,
+                    "depart_display": _tt_fmt24(depart_h2, depart_m2),
+                    "depart_minutes": depart_h2 * 60 + depart_m2,
+                    "pickups": rl.pickups if rl else "",
+                    "drops": rl.drops if rl else "",
+                })
+                cur_h, cur_m = depart_h2, depart_m2
+            if not stops:
+                unscheduled.append(train)
+                continue
+            scheduled.append({
+                "train": train, "route": route, "stops": stops,
+                "depart_display": _tt_fmt24(start_h, start_m),
+                "depart_sort": start_h * 60 + start_m,
+            })
+        scheduled.sort(key=lambda e: e["depart_sort"])
+        return scheduled, unscheduled
+
+    def _collect_station_visits(
+        scheduled: list[dict[str, Any]],
+    ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str]]:
+        station_visits: dict[str, list[dict[str, Any]]] = {}
+        station_names: dict[str, str] = {}
+        for entry in scheduled:
+            for stop in entry["stops"]:
+                sid = stop["station_id"]
+                if not sid:
+                    continue
+                station_names[sid] = stop["name"]
+                station_visits.setdefault(sid, []).append({
+                    "train": entry["train"],
+                    "route": entry["route"],
+                    "arrive_display": stop["arrive_display"],
+                    "arrive_sort": stop["arrive_minutes"],
+                    "depart_display": stop["depart_display"],
+                    "wait": stop["wait"],
+                    "pickups": stop["pickups"],
+                    "drops": stop["drops"],
+                })
+        for sid in station_visits:
+            station_visits[sid].sort(key=lambda v: v["arrive_sort"])
+        return station_visits, station_names
+
+    def _build_chart_rows(
+        scheduled: list[dict[str, Any]],
+        station_y_index: dict[str, int],
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for entry in scheduled:
+            points: list[dict[str, int]] = []
+            for stop in entry["stops"]:
+                sid = stop["station_id"]
+                if sid not in station_y_index:
+                    continue
+                y = station_y_index[sid]
+                points.append({"t": stop["arrive_minutes"], "y": y})
+                if stop["wait"] > 0:
+                    points.append({"t": stop["depart_minutes"], "y": y})
+            if points:
+                rows.append({"train": entry["train"], "points": points})
+        return rows
+
+    def _class_sort_key(train: Any) -> tuple[int, str]:
+        """Order trains within a direction column: lower class first
+        (closest to the station column), Extras last. The route-view
+        template then reverses this for right-side (opposite-direction)
+        columns so higher-class trains render closer to center on both
+        sides.
+        """
+        tc = (train.train_class or "").strip()
+        # 1 < 2 < 3 < Extra < unknown
+        order = {"1": 1, "2": 2, "3": 3, "X": 4}
+        return (order.get(tc, 5), train.name or train.id)
+
+    def _build_route_view(
+        *, route: Any, scheduled: list[dict[str, Any]],
+        stations_by_id: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Construct the "By Route" employee timetable for *route*.
+
+        * ``stations``: ordered rows in superior-direction order,
+          each with miles-from-prev, cumulative miles both ways,
+          stop_type (per-route), facilities + siding capacity (per
+          Station), and visits indexed by train.id.
+        * ``superior`` / ``opposite``: trains partitioned by
+          direction, sorted by class (lowest numeric class first,
+          Extra last).
+        * ``meet_marks``: ``(station_id, train_id)`` keys whose visit
+          is flagged bold as a meet.
+        """
+        stations: list[dict[str, Any]] = []
+        cum_forward = 0.0
+        for rl in route.locations:
+            station = stations_by_id.get(rl.station_id)
+            name = station.name if station else (rl.name or rl.station_id)
+            miles = _tt_float(rl.miles, 0.0)
+            cum_forward += miles
+            stations.append({
+                "station_id": rl.station_id,
+                "name": name,
+                "miles_from_prev": miles,
+                "cum_forward": cum_forward,
+                "stop_type": rl.stop_type,
+                "facilities": station.facilities if station else "",
+                "siding_capacity": (
+                    station.siding_capacity if station else ""
+                ),
+                "visits": {},
+            })
+        total_miles = stations[-1]["cum_forward"] if stations else 0.0
+        for st in stations:
+            st["cum_reverse"] = total_miles - st["cum_forward"]
+        for i, st in enumerate(stations):
+            if i + 1 < len(stations):
+                st["miles_to_next"] = stations[i + 1]["miles_from_prev"]
+            else:
+                st["miles_to_next"] = 0.0
+
+        superior_trains: list[dict[str, Any]] = []
+        opposite_trains: list[dict[str, Any]] = []
+        superior = (route.superior_direction or "").upper()
+        # Also consider branch trains whose route's mainline is THIS
+        # route. For those, a train only shows up if any of its
+        # scheduled stops land on a station of this mainline (which
+        # happens when the operator checks "mainline-before" /
+        # "mainline-after" rows in the train editor).
+        route_station_ids = {rl.station_id for rl in route.locations}
+        for entry in scheduled:
+            entry_route = entry["route"]
+            is_same_route = entry_route.id == route.id
+            is_branch_of_this = (
+                getattr(entry_route, "is_branch", "") == "true"
+                and getattr(entry_route, "mainline_route_id", "") == route.id
+            )
+            if not (is_same_route or is_branch_of_this):
+                continue
+            # For a branch train, skip unless it actually visits at
+            # least one mainline station (the operator opted in).
+            if is_branch_of_this and not is_same_route:
+                touches_main = any(
+                    s["station_id"] in route_station_ids
+                    for s in entry["stops"]
+                )
+                if not touches_main:
+                    continue
+            dir_ = (entry["train"].direction or "").upper()
+            for stop in entry["stops"]:
+                for st in stations:
+                    if st["station_id"] == stop["station_id"]:
+                        st["visits"][entry["train"].id] = {
+                            "depart_display": stop["depart_display"],
+                            "arrive_display": stop["arrive_display"],
+                            "depart_minutes": stop["depart_minutes"],
+                            "wait": stop["wait"],
+                        }
+                        break
+            payload = {
+                "train": entry["train"],
+                "class_label": {
+                    "1": "Class 1", "2": "Class 2", "3": "Class 3",
+                    "X": "Extra",
+                }.get((entry["train"].train_class or "").strip(), ""),
+                # Mark the row so the template can visually tag the
+                # branch train in the mainline's view.
+                "from_branch": is_branch_of_this and not is_same_route,
+                "branch_route_name": (
+                    (entry_route.name or entry_route.id)
+                    if is_branch_of_this and not is_same_route else ""
+                ),
+            }
+            if not dir_ or dir_ == superior:
+                superior_trains.append(payload)
+            else:
+                opposite_trains.append(payload)
+        superior_trains.sort(key=lambda p: _class_sort_key(p["train"]))
+        opposite_trains.sort(key=lambda p: _class_sort_key(p["train"]))
+
+        meet_marks: dict[tuple[str, str], bool] = {}
+        for st in stations:
+            visits = st["visits"]
+            for a in superior_trains:
+                va = visits.get(a["train"].id)
+                if not va:
+                    continue
+                for b in opposite_trains:
+                    vb = visits.get(b["train"].id)
+                    if not vb:
+                        continue
+                    if va["depart_minutes"] == vb["depart_minutes"]:
+                        meet_marks[(st["station_id"], a["train"].id)] = True
+                        meet_marks[(st["station_id"], b["train"].id)] = True
+
+        return {
+            "route": route,
+            "stations": stations,
+            "superior": superior_trains,
+            "opposite": opposite_trains,
+            "superior_direction": superior,
+            "meet_marks": meet_marks,
+            "total_miles": total_miles,
+        }
+
+    def _build_train_schedule_rows(
+        *, train: Any, routes_by_id: dict[str, Any],
+        station_name: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        """Compose the per-stop schedule rows for the train editor.
+
+        Walks the train's assigned route **in the train's own
+        travel direction**: superior-direction trains see the route
+        in its stored order; inferior-direction trains see it
+        reversed. The first row is always the train's origin
+        (anchors the Schedule depart time).
+
+        For a branch route, the branch has one of its endpoints
+        anchored on the mainline (``branch_start_stop_id``).
+        Depending on which end of the branch the anchor sits at
+        **and** which direction the train runs:
+
+        * Superior-direction train, anchor is the FIRST branch stop:
+          offer mainline stops BEFORE the anchor (in mainline
+          superior order) as opt-in "mainline-before" rows.
+        * Superior-direction train, anchor is the LAST branch stop:
+          offer mainline stops AFTER the anchor as "mainline-after".
+        * Inferior-direction train flips both: the mainline extension
+          sits at the OTHER end of the train's schedule.
+
+        Stops the train already has TrainStop entries for come back
+        pre-filled; the "included" default is ``False`` for the
+        optional mainline extension rows, ``True`` for the route's
+        own stops.
+        """
+        if not train or not getattr(train, "route_id", ""):
+            return []
+        route = routes_by_id.get(train.route_id)
+        if route is None:
+            return []
+        existing_by_stn = {
+            (s.station_id or ""): s for s in getattr(train, "stops", [])
+        }
+
+        superior = (route.superior_direction or "").upper()
+        train_dir = (train.direction or "").upper()
+        is_inferior = bool(superior and train_dir and train_dir != superior)
+
+        main_before: list[Any] = []
+        main_after: list[Any] = []
+        mainline = None
+        mainline_anchor_rl = None
+        anchor_at_branch_start = False
+        anchor_at_branch_end = False
+        if (
+            route.is_branch == "true"
+            and route.mainline_route_id
+            and route.branch_start_stop_id
+        ):
+            mainline = routes_by_id.get(route.mainline_route_id)
+            if mainline is not None:
+                branch_ids = [
+                    rl.station_id for rl in route.locations if rl.station_id
+                ]
+                anchor = route.branch_start_stop_id
+                try:
+                    anchor_pos_branch = branch_ids.index(anchor)
+                except ValueError:
+                    anchor_pos_branch = -1
+                main_stops = [
+                    rl for rl in mainline.locations if rl.station_id
+                ]
+                main_ids = [rl.station_id for rl in main_stops]
+                try:
+                    anchor_pos_main = main_ids.index(anchor)
+                except ValueError:
+                    anchor_pos_main = -1
+                if anchor_pos_branch >= 0 and anchor_pos_main >= 0:
+                    mainline_anchor_rl = main_stops[anchor_pos_main]
+                    if anchor_pos_branch == 0:
+                        main_before = main_stops[:anchor_pos_main]
+                        anchor_at_branch_start = True
+                    elif anchor_pos_branch == len(branch_ids) - 1:
+                        main_after = main_stops[anchor_pos_main + 1:]
+                        anchor_at_branch_end = True
+
+        # Compose the SUPERIOR-order row list with corrected miles at
+        # the branch/mainline junction. "miles" on each row means
+        # "distance from the previous row (in SUPERIOR order)", which
+        # is normally the stored RouteLocation.miles. The exception:
+        # at the main_before -> route_stops boundary the first branch
+        # stop is the anchor, whose branch.miles=0 is not useful --
+        # the real gap is "previous main_before stop -> anchor", which
+        # lives on mainline.anchor.miles.
+        superior_rows: list[dict[str, Any]] = []
+        mainline_label = ""
+        if mainline is not None:
+            mainline_label = mainline.name or mainline.id
+
+        for rl in main_before:
+            superior_rows.append({
+                "station_id": rl.station_id,
+                "name": station_name.get(rl.station_id, rl.station_id),
+                "miles": rl.miles,
+                "origin": "mainline-before",
+                "where": mainline_label,
+                "included": rl.station_id in existing_by_stn,
+                "depart_hour": "",
+                "depart_minute": "",
+                "wait": "",
+            })
+
+        for idx, rl in enumerate(route.locations):
+            miles = rl.miles
+            if (
+                idx == 0
+                and anchor_at_branch_start
+                and main_before
+                and mainline_anchor_rl is not None
+            ):
+                miles = mainline_anchor_rl.miles
+            superior_rows.append({
+                "station_id": rl.station_id,
+                "name": station_name.get(rl.station_id, rl.station_id),
+                "miles": miles,
+                "origin": "route-stop",
+                "where": route.name or route.id,
+                "included": True,
+                "depart_hour": "",
+                "depart_minute": "",
+                "wait": "",
+            })
+
+        for rl in main_after:
+            superior_rows.append({
+                "station_id": rl.station_id,
+                "name": station_name.get(rl.station_id, rl.station_id),
+                "miles": rl.miles,
+                "origin": "mainline-after",
+                "where": mainline_label,
+                "included": rl.station_id in existing_by_stn,
+                "depart_hour": "",
+                "depart_minute": "",
+                "wait": "",
+            })
+
+        # Inferior-direction train: reverse the row list so the top row
+        # is the train's origin, flip "mainline-before" <-> "after"
+        # labels (what was before the branch in superior sits after in
+        # travel order), then rotate the miles column by one so each
+        # row's "miles" becomes "distance from the previous TRAVEL
+        # stop". In a reversed list, that distance lives on the row
+        # we're leaving, not the one we're arriving at.
+        rows = list(superior_rows)
+        if is_inferior:
+            rows = list(reversed(rows))
+            for r in rows:
+                if r["origin"] == "mainline-before":
+                    r["origin"] = "mainline-after"
+                elif r["origin"] == "mainline-after":
+                    r["origin"] = "mainline-before"
+            prev_miles = "0"
+            for i, row in enumerate(rows):
+                current = row["miles"] or "0"
+                row["miles"] = prev_miles if i > 0 else "0"
+                prev_miles = current
+
+        for row in rows:
+            existing = existing_by_stn.get(row["station_id"])
+            if existing is None:
+                continue
+            row["depart_hour"] = existing.depart_hour
+            row["depart_minute"] = (
+                f"{int(existing.depart_minute):02d}"
+                if existing.depart_minute else ""
+            )
+            row["wait"] = existing.wait
+            if row["origin"] in ("mainline-before", "mainline-after"):
+                row["included"] = (existing.included or "true") == "true"
+        return rows
+
+    @app.get("/operations", response_class=HTMLResponse)
+    async def operations_home(request: Request) -> Any:
+        return templates.TemplateResponse(
+            request, "operations.html",
+            _base_context(handle, "operations"),
+        )
+
+    # ---- cars ----
+    async def _fetch_cars_context() -> dict[str, Any]:
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Car, Location,
+        )
+        rows = await _dispatch(handle, type="operations-cars", method="list")
+        location_rows = await _dispatch(
+            handle, type="operations-locations", method="list",
+        )
+        locations = _ops_rosters_project(location_rows, Location)
+        return {
+            "cars": _ops_rosters_project(rows, Car),
+            "locations": locations,
+            "location_name_by_id": {l.id: l.name or l.id for l in locations},
+            "car_types_catalog": await _ops_car_types_catalog(),
+        }
+
+    @app.get("/operations/cars", response_class=HTMLResponse)
+    async def operations_cars_page(request: Request) -> Any:
+        ctx = await _fetch_cars_context()
+        return templates.TemplateResponse(
+            request, "operations_cars.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.get("/operations/cars/refresh", response_class=HTMLResponse)
+    async def operations_cars_refresh(request: Request) -> Any:
+        ctx = await _fetch_cars_context()
+        return templates.TemplateResponse(
+            request, "_operations_cars_table.html", ctx,
+        )
+
+    @app.post("/operations/cars/create", response_class=HTMLResponse)
+    async def operations_cars_create(request: Request) -> Any:
+        form = await request.form()
+        new_id = str(form.get("id") or "").strip()
+        existing = await _dispatch(
+            handle, type="operations-cars", method="list",
+        )
+        if new_id and any((r.get("id") == new_id) for r in existing):
+            ctx = await _fetch_cars_context()
+            return templates.TemplateResponse(
+                request, "_operations_cars_table.html",
+                ctx | {"create_error": (
+                    f"Car id {new_id!r} already exists."
+                )},
+            )
+        payload = {k: str(v) for k, v in form.items() if v != ""}
+        await _dispatch(
+            handle, type="operations-cars", method="put", data=payload,
+        )
+        _nudge("operations-cars")
+        ctx = await _fetch_cars_context()
+        return templates.TemplateResponse(
+            request, "_operations_cars_table.html", ctx,
+        )
+
+    @app.get("/operations/cars/{car_id}/row", response_class=HTMLResponse)
+    async def operations_cars_row(request: Request, car_id: str) -> Any:
+        from pmri_core.persistence.operations_xml import Car  # noqa: PLC0415
+        row = await _dispatch(
+            handle, type="operations-cars", method="get", data={"id": car_id},
+        )
+        [car] = _ops_rosters_project([row], Car)
+        return templates.TemplateResponse(
+            request, "_operations_car_row.html", {"c": car},
+        )
+
+    @app.get("/operations/cars/{car_id}/edit", response_class=HTMLResponse)
+    async def operations_cars_edit(request: Request, car_id: str) -> Any:
+        from pmri_core.persistence.operations_xml import Car, Location  # noqa: PLC0415
+        row = await _dispatch(
+            handle, type="operations-cars", method="get", data={"id": car_id},
+        )
+        [car] = _ops_rosters_project([row], Car)
+        locations = _ops_rosters_project(
+            await _dispatch(
+                handle, type="operations-locations", method="list",
+            ),
+            Location,
+        )
+        return templates.TemplateResponse(
+            request, "_operations_car_row_edit.html",
+            {
+                "c": car,
+                "locations": locations,
+                "car_types_catalog": await _ops_car_types_catalog(),
+            },
+        )
+
+    @app.post("/operations/cars/{car_id}/update", response_class=HTMLResponse)
+    async def operations_cars_update(request: Request, car_id: str) -> Any:
+        from pmri_core.persistence.operations_xml import Car  # noqa: PLC0415
+        form = await request.form()
+        payload = {k: str(v) for k, v in form.items()}
+        payload["id"] = car_id
+        await _dispatch(
+            handle, type="operations-cars", method="put", data=payload,
+        )
+        _nudge("operations-cars")
+        row = await _dispatch(
+            handle, type="operations-cars", method="get", data={"id": car_id},
+        )
+        [car] = _ops_rosters_project([row], Car)
+        return templates.TemplateResponse(
+            request, "_operations_car_row.html", {"c": car},
+        )
+
+    @app.delete("/operations/cars/{car_id}", response_class=HTMLResponse)
+    async def operations_cars_delete(request: Request, car_id: str) -> Any:
+        try:
+            await _dispatch(
+                handle, type="operations-cars", method="delete",
+                data={"id": car_id},
+            )
+        except HTTPException:
+            pass    # already gone; fall through to the refreshed table
+        _nudge("operations-cars")
+        ctx = await _fetch_cars_context()
+        return templates.TemplateResponse(
+            request, "_operations_cars_table.html", ctx,
+        )
+
+    # ---- engines ----
+    async def _fetch_engines_context() -> dict[str, Any]:
+        """Common context for the engines list + its refresh fragment.
+        Carries the Station dropdown + name map so the "Location" field
+        (semantically a station id now) renders as the station's name."""
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Engine, Station,
+        )
+        rows = await _dispatch(handle, type="operations-engines", method="list")
+        station_rows = await _dispatch(
+            handle, type="operations-stations", method="list",
+        )
+        stations = _ops_rosters_project(station_rows, Station)
+        return {
+            "engines": _ops_rosters_project(rows, Engine),
+            "stations": stations,
+            "station_name_by_id": {s.id: s.name or s.id for s in stations},
+        }
+
+    @app.get("/operations/engines", response_class=HTMLResponse)
+    async def operations_engines_page(request: Request) -> Any:
+        ctx = await _fetch_engines_context()
+        return templates.TemplateResponse(
+            request, "operations_engines.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.get("/operations/engines/refresh", response_class=HTMLResponse)
+    async def operations_engines_refresh(request: Request) -> Any:
+        ctx = await _fetch_engines_context()
+        return templates.TemplateResponse(
+            request, "_operations_engines_table.html", ctx,
+        )
+
+    @app.post("/operations/engines/create", response_class=HTMLResponse)
+    async def operations_engines_create(request: Request) -> Any:
+        form = await request.form()
+        new_id = str(form.get("id") or "").strip()
+        existing = await _dispatch(
+            handle, type="operations-engines", method="list",
+        )
+        if new_id and any((e.get("id") == new_id) for e in existing):
+            ctx = await _fetch_engines_context()
+            return templates.TemplateResponse(
+                request, "_operations_engines_table.html",
+                ctx | {
+                    "create_error": f"Engine id {new_id!r} already exists.",
+                },
+            )
+        payload = {k: str(v) for k, v in form.items() if v != ""}
+        await _dispatch(
+            handle, type="operations-engines", method="put", data=payload,
+        )
+        _nudge("operations-engines")
+        ctx = await _fetch_engines_context()
+        return templates.TemplateResponse(
+            request, "_operations_engines_table.html", ctx,
+        )
+
+    @app.get("/operations/engines/{engine_id}/row", response_class=HTMLResponse)
+    async def operations_engines_row(request: Request, engine_id: str) -> Any:
+        from pmri_core.persistence.operations_xml import Engine  # noqa: PLC0415
+        row = await _dispatch(
+            handle, type="operations-engines", method="get",
+            data={"id": engine_id},
+        )
+        [eng] = _ops_rosters_project([row], Engine)
+        ctx = await _fetch_engines_context()
+        return templates.TemplateResponse(
+            request, "_operations_engine_row.html",
+            {"e": eng, "station_name_by_id": ctx["station_name_by_id"]},
+        )
+
+    @app.get("/operations/engines/{engine_id}/edit", response_class=HTMLResponse)
+    async def operations_engines_edit(request: Request, engine_id: str) -> Any:
+        from pmri_core.persistence.operations_xml import Engine  # noqa: PLC0415
+        row = await _dispatch(
+            handle, type="operations-engines", method="get",
+            data={"id": engine_id},
+        )
+        [eng] = _ops_rosters_project([row], Engine)
+        ctx = await _fetch_engines_context()
+        return templates.TemplateResponse(
+            request, "_operations_engine_row_edit.html",
+            {"e": eng, "stations": ctx["stations"]},
+        )
+
+    @app.post("/operations/engines/{engine_id}/update", response_class=HTMLResponse)
+    async def operations_engines_update(
+        request: Request, engine_id: str,
+    ) -> Any:
+        from pmri_core.persistence.operations_xml import Engine  # noqa: PLC0415
+        form = await request.form()
+        payload = {k: str(v) for k, v in form.items()}
+        payload["id"] = engine_id
+        await _dispatch(
+            handle, type="operations-engines", method="put", data=payload,
+        )
+        _nudge("operations-engines")
+        row = await _dispatch(
+            handle, type="operations-engines", method="get",
+            data={"id": engine_id},
+        )
+        [eng] = _ops_rosters_project([row], Engine)
+        ctx = await _fetch_engines_context()
+        return templates.TemplateResponse(
+            request, "_operations_engine_row.html",
+            {"e": eng, "station_name_by_id": ctx["station_name_by_id"]},
+        )
+
+    @app.post("/operations/engines/import_roster", response_class=HTMLResponse)
+    async def operations_engines_import_roster(request: Request) -> Any:
+        """Add an Engine for every roster entry on the active profile.
+
+        Skips any id that's already in the engines roster (no overwrite),
+        so hitting the button twice is safe. Returns the refreshed
+        engines table.
+        """
+        try:
+            roster = await _dispatch(handle, type="roster", method="list")
+        except HTTPException:
+            roster = []
+        existing_rows = await _dispatch(
+            handle, type="operations-engines", method="list",
+        )
+        existing_ids = {str(r.get("id") or "") for r in existing_rows}
+
+        imported = 0
+        for entry in roster or []:
+            eid = str(entry.get("id") or "").strip()
+            if not eid or eid in existing_ids:
+                continue
+            payload = {
+                "id": eid,
+                "roadName": str(entry.get("roadName") or ""),
+                "roadNumber": str(entry.get("roadNumber") or ""),
+                "model": str(entry.get("model") or ""),
+            }
+            await _dispatch(
+                handle, type="operations-engines", method="put", data=payload,
+            )
+            imported += 1
+        if imported:
+            _nudge("operations-engines")
+        ctx = await _fetch_engines_context()
+        return templates.TemplateResponse(
+            request, "_operations_engines_table.html", ctx,
+        )
+
+    @app.delete("/operations/engines/{engine_id}", response_class=HTMLResponse)
+    async def operations_engines_delete(request: Request, engine_id: str) -> Any:
+        try:
+            await _dispatch(
+                handle, type="operations-engines", method="delete",
+                data={"id": engine_id},
+            )
+        except HTTPException:
+            pass
+        _nudge("operations-engines")
+        ctx = await _fetch_engines_context()
+        return templates.TemplateResponse(
+            request, "_operations_engines_table.html", ctx,
+        )
+
+    # ---- locations ----
+    async def _fetch_locations_context() -> dict[str, Any]:
+        """Common context for the locations list + its refresh fragment
+        and create response. Carries the station dropdown + name map
+        the templates render alongside each Location row."""
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Location, Station,
+        )
+        rows = await _dispatch(
+            handle, type="operations-locations", method="list",
+        )
+        station_rows = await _dispatch(
+            handle, type="operations-stations", method="list",
+        )
+        stations = _ops_rosters_project(station_rows, Station)
+        counts = await _ops_cars_by_location()
+        return {
+            "locations": _ops_rosters_project(rows, Location),
+            "current_cars_by_location": counts,
+            "stations": stations,
+            "station_name_by_id": {s.id: s.name or s.id for s in stations},
+        }
+
+    @app.get("/operations/locations", response_class=HTMLResponse)
+    async def operations_locations_page(request: Request) -> Any:
+        ctx = await _fetch_locations_context()
+        return templates.TemplateResponse(
+            request, "operations_locations.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.get("/operations/locations/refresh", response_class=HTMLResponse)
+    async def operations_locations_refresh(request: Request) -> Any:
+        ctx = await _fetch_locations_context()
+        return templates.TemplateResponse(
+            request, "_operations_locations_table.html", ctx,
+        )
+
+    # ``kind`` values offered in the Operations Pro location editor,
+    # in the order the UI presents them. Kept here (not in the template)
+    # so both the create and the full-page edit route can share the
+    # list without diverging.
+    _LOCATION_KINDS: tuple[tuple[str, str], ...] = (
+        ("yard", "Yard"),
+        ("spur", "Spur"),
+        ("interchange", "Interchange"),
+        ("staging", "Staging"),
+    )
+
+    # Baseline car-type catalog -- merged with the distinct ``type``
+    # values across the active car roster so the matrix shows real
+    # types plus a usable default set when the roster is still empty.
+    _DEFAULT_CAR_TYPES: tuple[str, ...] = (
+        "Boxcar", "Caboose", "Coil Car", "Covered Hopper", "Flatcar",
+        "Gondola", "Hopper", "Passenger", "Reefer", "Stock", "Tank",
+    )
+
+    async def _ops_car_types_catalog() -> list[tuple[str, bool]]:
+        """Return the sorted (type, in_roster) pairs the Edit Location
+        matrix should offer. ``in_roster`` is True when at least one
+        car in the active roster uses that type."""
+        try:
+            car_rows = await _dispatch(
+                handle, type="operations-cars", method="list",
+            )
+        except HTTPException:
+            car_rows = []
+        roster_types: set[str] = set()
+        for row in car_rows or []:
+            t = (row.get("type") or "").strip()
+            if t:
+                roster_types.add(t)
+        merged = sorted(set(_DEFAULT_CAR_TYPES) | roster_types, key=str.lower)
+        return [(t, t in roster_types) for t in merged]
+
+    async def _ops_cars_by_location() -> dict[str, int]:
+        """Count cars currently assigned to each location, keyed by
+        the car's ``locationId``. Blank location ids are counted
+        under the empty string (not surfaced in the table today)."""
+        try:
+            car_rows = await _dispatch(
+                handle, type="operations-cars", method="list",
+            )
+        except HTTPException:
+            car_rows = []
+        counts: dict[str, int] = {}
+        for row in car_rows or []:
+            loc_id = str(row.get("locationId") or "")
+            counts[loc_id] = counts.get(loc_id, 0) + 1
+        return counts
+
+    def _map_kind_to_ops(payload: dict[str, Any]) -> None:
+        """Encode ``kind`` -> ``ops`` so JMRI-compatible staging detection
+        still works. ``kind="staging"`` maps to ``ops="2"``; anything
+        else (yard/spur/interchange) maps to ``ops="1"``. The ``kind``
+        value itself is kept on the payload for PMRI's finer grain."""
+        kind = (payload.get("kind") or "").strip().lower()
+        if not kind:
+            return
+        payload["ops"] = "2" if kind == "staging" else "1"
+
+    def _coalesce_location_dir(form: Any) -> str:
+        """Fold the four ``dir_<compass>`` checkboxes into JMRI's ``dir``
+        attribute: a bitmask with East=1, West=2, North=4, South=8.
+
+        Returns the empty string when the form didn't supply ANY of the
+        checkboxes, so an operator opening an unrelated form that
+        happens to contain ``name="dir"`` doesn't accidentally zero the
+        location's direction mask.
+        """
+        has_any = any(
+            f"dir_{d}" in form for d in ("east", "west", "north", "south")
+        )
+        if not has_any:
+            return form.get("dir") or ""
+        mask = 0
+        if form.get("dir_east"):
+            mask |= 1
+        if form.get("dir_west"):
+            mask |= 2
+        if form.get("dir_north"):
+            mask |= 4
+        if form.get("dir_south"):
+            mask |= 8
+        return str(mask)
+
+    @app.post("/operations/locations/create", response_class=HTMLResponse)
+    async def operations_locations_create(request: Request) -> Any:
+        form = await request.form()
+        new_id = str(form.get("id") or "").strip()
+        existing = await _dispatch(
+            handle, type="operations-locations", method="list",
+        )
+        if new_id and any((l.get("id") == new_id) for l in existing):
+            ctx = await _fetch_locations_context()
+            return templates.TemplateResponse(
+                request, "_operations_locations_table.html",
+                ctx | {"create_error": (
+                    f"Location id {new_id!r} already exists."
+                )},
+            )
+        payload: dict[str, Any] = {}
+        for k, v in form.multi_items():
+            if k.startswith("dir_") or v == "":
+                continue
+            payload[k] = str(v)
+        dir_mask = _coalesce_location_dir(form)
+        if dir_mask:
+            payload["dir"] = dir_mask
+        _map_kind_to_ops(payload)
+        await _dispatch(
+            handle, type="operations-locations", method="put", data=payload,
+        )
+        _nudge("operations-locations")
+        ctx = await _fetch_locations_context()
+        return templates.TemplateResponse(
+            request, "_operations_locations_table.html", ctx,
+        )
+
+    @app.get("/operations/locations/{location_id}/edit", response_class=HTMLResponse)
+    async def operations_locations_edit(
+        request: Request, location_id: str,
+    ) -> Any:
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Location, Station,
+        )
+        row = await _dispatch(
+            handle, type="operations-locations", method="get",
+            data={"id": location_id},
+        )
+        [loc] = _ops_rosters_project([row], Location)
+        counts = await _ops_cars_by_location()
+        dir_int = int(loc.dir) if loc.dir and loc.dir.isdigit() else 0
+        dirs = {
+            "east":  bool(dir_int & 1),
+            "west":  bool(dir_int & 2),
+            "north": bool(dir_int & 4),
+            "south": bool(dir_int & 8),
+        }
+        if not loc.kind:
+            if loc.ops == "2":
+                loc.kind = "staging"
+            elif loc.ops == "1":
+                loc.kind = "yard"
+        station_rows = await _dispatch(
+            handle, type="operations-stations", method="list",
+        )
+        stations = _ops_rosters_project(station_rows, Station)
+        return templates.TemplateResponse(
+            request, "operations_location_edit.html",
+            _base_context(handle, "operations") | {
+                "location": loc,
+                "current_cars": counts.get(location_id, 0),
+                "kinds": _LOCATION_KINDS,
+                "dirs": dirs,
+                "car_types_catalog": await _ops_car_types_catalog(),
+                "stations": stations,
+            },
+        )
+
+    @app.post("/operations/locations/{location_id}/save", response_class=HTMLResponse)
+    async def operations_locations_save(
+        request: Request, location_id: str,
+    ) -> Any:
+        """Full-page save: writes every field plus the car-types matrix.
+        Redirects back to the locations list on success -- the hx-swap
+        on ``body`` replaces the whole page, and ``hx-push-url`` restores
+        the ``/operations/locations`` URL in the address bar."""
+        form = await request.form()
+        # Checkboxes send repeated ``carType`` keys; collect them all.
+        # Use ``multi_items`` so repeated keys don't collapse during the
+        # dict comprehension (Starlette's ``form.items()`` dedupes).
+        car_types = [str(v) for v in form.getlist("carType")]
+        payload: dict[str, Any] = {}
+        for k, v in form.multi_items():
+            if k == "carType" or k.startswith("dir_"):
+                continue
+            payload[k] = str(v)
+        payload["id"] = location_id
+        payload["dir"] = _coalesce_location_dir(form)
+        _map_kind_to_ops(payload)
+        payload["carTypes"] = car_types   # service layer accepts list
+        await _dispatch(
+            handle, type="operations-locations", method="put", data=payload,
+        )
+        _nudge("operations-locations")
+        ctx = await _fetch_locations_context()
+        return templates.TemplateResponse(
+            request, "operations_locations.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.delete("/operations/locations/{location_id}", response_class=HTMLResponse)
+    async def operations_locations_delete(request: Request, location_id: str) -> Any:
+        try:
+            await _dispatch(
+                handle, type="operations-locations", method="delete",
+                data={"id": location_id},
+            )
+        except HTTPException:
+            pass
+        _nudge("operations-locations")
+        ctx = await _fetch_locations_context()
+        return templates.TemplateResponse(
+            request, "_operations_locations_table.html", ctx,
+        )
+
+    # ---- stations ----
+    async def _fetch_stations_context() -> dict[str, Any]:
+        """Common context for the stations list + its refresh fragment."""
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Location, Station,
+        )
+        station_rows = await _dispatch(
+            handle, type="operations-stations", method="list",
+        )
+        location_rows = await _dispatch(
+            handle, type="operations-locations", method="list",
+        )
+        stations = _ops_rosters_project(station_rows, Station)
+        locations = _ops_rosters_project(location_rows, Location)
+        counts: dict[str, int] = {}
+        for loc in locations:
+            if loc.station_id:
+                counts[loc.station_id] = counts.get(loc.station_id, 0) + 1
+        return {
+            "stations": stations,
+            "locations_by_station": counts,
+        }
+
+    @app.get("/operations/stations", response_class=HTMLResponse)
+    async def operations_stations_page(request: Request) -> Any:
+        ctx = await _fetch_stations_context()
+        return templates.TemplateResponse(
+            request, "operations_stations.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.get("/operations/stations/refresh", response_class=HTMLResponse)
+    async def operations_stations_refresh(request: Request) -> Any:
+        ctx = await _fetch_stations_context()
+        return templates.TemplateResponse(
+            request, "_operations_stations_table.html", ctx,
+        )
+
+    @app.post("/operations/stations/create", response_class=HTMLResponse)
+    async def operations_stations_create(request: Request) -> Any:
+        form = await request.form()
+        new_id = str(form.get("id") or "").strip()
+        existing = await _dispatch(
+            handle, type="operations-stations", method="list",
+        )
+        if new_id and any((s.get("id") == new_id) for s in existing):
+            ctx = await _fetch_stations_context()
+            return templates.TemplateResponse(
+                request, "_operations_stations_table.html",
+                ctx | {"create_error": (
+                    f"Station id {new_id!r} already exists."
+                )},
+            )
+        payload = {k: str(v) for k, v in form.items() if v != ""}
+        await _dispatch(
+            handle, type="operations-stations", method="put", data=payload,
+        )
+        ctx = await _fetch_stations_context()
+        _nudge("operations-stations")
+        return templates.TemplateResponse(
+            request, "_operations_stations_table.html", ctx,
+        )
+
+    @app.get("/operations/stations/{station_id}/edit", response_class=HTMLResponse)
+    async def operations_stations_edit(
+        request: Request, station_id: str,
+    ) -> Any:
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Location, Station,
+        )
+        row = await _dispatch(
+            handle, type="operations-stations", method="get",
+            data={"id": station_id},
+        )
+        [station] = _ops_rosters_project([row], Station)
+        location_rows = await _dispatch(
+            handle, type="operations-locations", method="list",
+        )
+        locations = _ops_rosters_project(location_rows, Location)
+        member_locations = [l for l in locations if l.station_id == station_id]
+        return templates.TemplateResponse(
+            request, "operations_station_edit.html",
+            _base_context(handle, "operations") | {
+                "station": station,
+                "member_locations": member_locations,
+            },
+        )
+
+    @app.post("/operations/stations/{station_id}/save", response_class=HTMLResponse)
+    async def operations_stations_save(
+        request: Request, station_id: str,
+    ) -> Any:
+        form = await request.form()
+        payload: dict[str, Any] = {k: str(v) for k, v in form.multi_items()}
+        payload["id"] = station_id
+        await _dispatch(
+            handle, type="operations-stations", method="put", data=payload,
+        )
+        _nudge("operations-stations")
+        ctx = await _fetch_stations_context()
+        return templates.TemplateResponse(
+            request, "operations_stations.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.delete("/operations/stations/{station_id}", response_class=HTMLResponse)
+    async def operations_stations_delete(
+        request: Request, station_id: str,
+    ) -> Any:
+        try:
+            await _dispatch(
+                handle, type="operations-stations", method="delete",
+                data={"id": station_id},
+            )
+        except HTTPException:
+            pass
+        ctx = await _fetch_stations_context()
+        _nudge("operations-stations")
+        return templates.TemplateResponse(
+            request, "_operations_stations_table.html", ctx,
+        )
+
+    # ---- routes ----
+    async def _fetch_routes_context() -> dict[str, Any]:
+        """Common context for the routes list + its refresh fragment.
+        Re-shapes each wire-shape ``stops`` into ``locations`` so the
+        Route model's typed list actually populates (otherwise the
+        table's ``r.locations|length`` always renders 0).
+        """
+        from pmri_core.persistence.operations_xml import Route  # noqa: PLC0415
+        rows_raw = await _dispatch(
+            handle, type="operations-routes", method="list",
+        )
+        rows = [
+            dict(r, locations=r.get("stops") or []) for r in rows_raw
+        ]
+        return {"routes": _ops_rosters_project(rows, Route)}
+
+    @app.get("/operations/routes", response_class=HTMLResponse)
+    async def operations_routes_page(request: Request) -> Any:
+        ctx = await _fetch_routes_context()
+        return templates.TemplateResponse(
+            request, "operations_routes.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.get("/operations/routes/refresh", response_class=HTMLResponse)
+    async def operations_routes_refresh(request: Request) -> Any:
+        ctx = await _fetch_routes_context()
+        return templates.TemplateResponse(
+            request, "_operations_routes_table.html", ctx,
+        )
+
+    @app.post("/operations/routes/create", response_class=HTMLResponse)
+    async def operations_routes_create(request: Request) -> Any:
+        form = await request.form()
+        new_id = str(form.get("id") or "").strip()
+        # ID-collision: reject rather than silently upsert the existing
+        # route. Any client that really meant edit should use the edit
+        # endpoint. Matches stations/trains/locations/cars/engines flow.
+        existing = await _dispatch(
+            handle, type="operations-routes", method="list",
+        )
+        if new_id and any((r.get("id") == new_id) for r in existing):
+            ctx = await _fetch_routes_context()
+            return templates.TemplateResponse(
+                request, "_operations_routes_table.html",
+                ctx | {"create_error": (
+                    f"Route id {new_id!r} already exists. "
+                    "Pick a different id or edit the existing route."
+                )},
+            )
+        payload = {k: str(v) for k, v in form.items() if v != ""}
+        await _dispatch(
+            handle, type="operations-routes", method="put", data=payload,
+        )
+        ctx = await _fetch_routes_context()
+        _nudge("operations-routes")
+        return templates.TemplateResponse(
+            request, "_operations_routes_table.html", ctx,
+        )
+
+    @app.get("/operations/routes/{route_id}/edit", response_class=HTMLResponse)
+    async def operations_routes_edit(request: Request, route_id: str) -> Any:
+        import json  # noqa: PLC0415
+
+        from pmri_core.persistence.operations_xml import Route, Station  # noqa: PLC0415
+        row = await _dispatch(
+            handle, type="operations-routes", method="get",
+            data={"id": route_id},
+        )
+        row = dict(row)
+        row["locations"] = row.pop("stops", []) or []
+        [route] = _ops_rosters_project([row], Route)
+        station_rows = await _dispatch(
+            handle, type="operations-stations", method="list",
+        )
+        stations = _ops_rosters_project(station_rows, Station)
+        all_route_rows_raw = await _dispatch(
+            handle, type="operations-routes", method="list",
+        )
+        all_route_rows = [
+            dict(r, locations=r.get("stops") or []) for r in all_route_rows_raw
+        ]
+        all_routes = _ops_rosters_project(all_route_rows, Route)
+        stn_name_by_id = {s.id: s.name or s.id for s in stations}
+        mainline_stops: dict[str, list[dict[str, str]]] = {}
+        for r in all_routes:
+            mainline_stops[r.id] = [
+                {
+                    "station_id": rl.station_id,
+                    "name": stn_name_by_id.get(rl.station_id, rl.station_id),
+                }
+                for rl in r.locations
+                if rl.station_id
+            ]
+        return templates.TemplateResponse(
+            request, "operations_route_edit.html",
+            _base_context(handle, "operations") | {
+                "route": route,
+                "stations": stations,
+                "all_routes": all_routes,
+                "mainline_stops_json": json.dumps(mainline_stops),
+            },
+        )
+
+    @app.post("/operations/routes/{route_id}/save", response_class=HTMLResponse)
+    async def operations_routes_save(request: Request, route_id: str) -> Any:
+        """Full-page save: rewrites every scalar attribute + replaces
+        the stops list with the submitted ordered entries."""
+        form = await request.form()
+        stn_ids    = form.getlist("stop_stationId")
+        pickups    = form.getlist("stop_pickups")
+        drops      = form.getlist("stop_drops")
+        max_moves  = form.getlist("stop_maxCarMoves")
+        miles      = form.getlist("stop_miles")
+        stop_types = form.getlist("stop_stopType")
+        stops: list[dict[str, Any]] = []
+        for i, stn_id in enumerate(stn_ids):
+            stops.append({
+                "stationId": stn_id,
+                "pickups":    pickups[i]    if i < len(pickups)    else "",
+                "drops":      drops[i]      if i < len(drops)      else "",
+                "maxCarMoves": max_moves[i] if i < len(max_moves)  else "",
+                "miles":      miles[i]      if i < len(miles)      else "",
+                "stopType":   stop_types[i] if i < len(stop_types) else "",
+            })
+        payload: dict[str, Any] = {}
+        for k, v in form.multi_items():
+            if k.startswith("stop_"):
+                continue
+            payload[k] = str(v)
+        payload["id"] = route_id
+        payload["stops"] = stops
+        # A branch inherits Direction + Superior from its mainline.
+        # The form's direction / superiorDirection selects are left
+        # disabled in the UI so they don't submit; look up the parent
+        # route and overwrite whatever the payload has (or doesn't).
+        if payload.get("isBranch") == "true" and payload.get("mainlineRouteId"):
+            try:
+                mainline = await _dispatch(
+                    handle, type="operations-routes", method="get",
+                    data={"id": payload["mainlineRouteId"]},
+                )
+            except HTTPException:
+                mainline = None
+            if mainline:
+                payload["direction"] = mainline.get("direction") or ""
+                payload["superiorDirection"] = (
+                    mainline.get("superiorDirection") or ""
+                )
+        await _dispatch(
+            handle, type="operations-routes", method="put", data=payload,
+        )
+        _nudge("operations-routes")
+        ctx = await _fetch_routes_context()
+        return templates.TemplateResponse(
+            request, "operations_routes.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.delete("/operations/routes/{route_id}", response_class=HTMLResponse)
+    async def operations_routes_delete(request: Request, route_id: str) -> Any:
+        try:
+            await _dispatch(
+                handle, type="operations-routes", method="delete",
+                data={"id": route_id},
+            )
+        except HTTPException:
+            pass
+        ctx = await _fetch_routes_context()
+        _nudge("operations-routes")
+        return templates.TemplateResponse(
+            request, "_operations_routes_table.html", ctx,
+        )
+
+    # ---- timetable ----
+    @app.get("/operations/timetable", response_class=HTMLResponse)
+    async def operations_timetable(request: Request) -> Any:
+        """Direct-from-operations timetable.
+
+        Four view modes, selected via ``?view=train|station|chart|route``:
+
+        * ``train`` (default) -- per-train schedule, one section per
+          train, columns for arrive / wait / depart at each stop.
+        * ``station`` -- pick a station; show every train that visits
+          with its arrival + departure time there, sorted by arrival.
+        * ``chart`` -- stringline (time-distance) SVG with each train
+          drawn as a polyline through its (time, station) points.
+        * ``route`` -- classic employee-timetable format for a chosen
+          route: trains in the superior direction left of the station
+          column, opposite direction right, grouped by class.
+
+        Filters: ``?type=<trainType>`` narrows the view to trains of
+        that type. The schedule for each train is driven by its
+        ``stops`` list (per-TrainStop ``departHour`` / ``departMinute``
+        / ``wait``) with a fallback to average-speed + route-miles
+        when the train carries no explicit stop entries.
+        """
+        from datetime import datetime  # noqa: PLC0415
+
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Route, Station, Train,
+        )
+
+        trains = _ops_rosters_project(
+            await _dispatch(handle, type="operations-trains", method="list"),
+            Train,
+        )
+        route_rows_raw = await _dispatch(
+            handle, type="operations-routes", method="list",
+        )
+        route_rows = [
+            dict(r, locations=r.get("stops") or []) for r in route_rows_raw
+        ]
+        routes_by_id: dict[str, Route] = {
+            r.id: r for r in _ops_rosters_project(route_rows, Route)
+        }
+        stations_by_id: dict[str, Station] = {
+            s.id: s for s in _ops_rosters_project(
+                await _dispatch(
+                    handle, type="operations-stations", method="list",
+                ),
+                Station,
+            )
+        }
+
+        view = request.query_params.get("view") or "train"
+        if view not in ("train", "station", "chart", "route"):
+            view = "train"
+        type_filter = (request.query_params.get("type") or "").strip()
+        station_filter = (request.query_params.get("station") or "").strip()
+        route_filter = (request.query_params.get("route") or "").strip()
+
+        train_types = sorted({
+            (t.train_type or "").strip() for t in trains
+            if (t.train_type or "").strip()
+        })
+
+        scheduled, unscheduled = _compute_scheduled_trains(
+            trains=trains, routes_by_id=routes_by_id,
+            stations_by_id=stations_by_id, type_filter=type_filter,
+        )
+
+        station_visits, station_names = _collect_station_visits(scheduled)
+        station_catalog = sorted(
+            station_names.items(), key=lambda kv: kv[1].lower(),
+        )
+        active_station = station_filter if station_filter in station_visits else (
+            station_catalog[0][0] if station_catalog else ""
+        )
+
+        station_y_order = [sid for sid, _ in station_catalog]
+        station_y_index = {sid: i for i, sid in enumerate(station_y_order)}
+        chart_rows = _build_chart_rows(scheduled, station_y_index)
+
+        route_catalog = sorted(
+            [(r.id, r.name or r.id) for r in routes_by_id.values()],
+            key=lambda kv: kv[1].lower(),
+        )
+        active_route = route_filter if route_filter in routes_by_id else (
+            route_catalog[0][0] if route_catalog else ""
+        )
+        route_view_data: dict[str, Any] | None = None
+        if view == "route" and active_route:
+            route_view_data = _build_route_view(
+                route=routes_by_id[active_route],
+                scheduled=scheduled,
+                stations_by_id=stations_by_id,
+            )
+
+        return templates.TemplateResponse(
+            request, "operations_timetable.html",
+            _base_context(handle, "operations") | {
+                "view": view,
+                "type_filter": type_filter,
+                "train_types": train_types,
+                "scheduled": scheduled,
+                "unscheduled": unscheduled,
+                "station_catalog": station_catalog,
+                "station_visits": station_visits,
+                "active_station": active_station,
+                "chart_rows": chart_rows,
+                "chart_stations": [
+                    {"id": sid, "name": station_names[sid]}
+                    for sid in station_y_order
+                ],
+                "route_catalog": route_catalog,
+                "active_route": active_route,
+                "route_view": route_view_data,
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            },
+        )
+
+    # ---- trains ----
+    async def _fetch_trains_context() -> dict[str, Any]:
+        """Common context for the trains list + its refresh fragment:
+        the train roster plus a ``routes_by_id`` map the table uses to
+        render human-facing route names rather than the raw ``route_id``.
+        """
+        from pmri_core.persistence.operations_xml import Route, Train  # noqa: PLC0415
+        train_rows = await _dispatch(
+            handle, type="operations-trains", method="list",
+        )
+        route_rows_raw = await _dispatch(
+            handle, type="operations-routes", method="list",
+        )
+        route_rows = [
+            dict(r, locations=r.get("stops") or []) for r in route_rows_raw
+        ]
+        routes = _ops_rosters_project(route_rows, Route)
+        trains = _ops_rosters_project(train_rows, Train)
+        return {
+            "trains": trains,
+            "routes": routes,
+            "routes_by_id": {r.id: r for r in routes},
+        }
+
+    @app.get("/operations/trains", response_class=HTMLResponse)
+    async def operations_trains_page(request: Request) -> Any:
+        ctx = await _fetch_trains_context()
+        return templates.TemplateResponse(
+            request, "operations_trains.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.get("/operations/trains/refresh", response_class=HTMLResponse)
+    async def operations_trains_refresh(request: Request) -> Any:
+        ctx = await _fetch_trains_context()
+        return templates.TemplateResponse(
+            request, "_operations_trains_table.html", ctx,
+        )
+
+    @app.post("/operations/trains/create", response_class=HTMLResponse)
+    async def operations_trains_create(request: Request) -> Any:
+        form = await request.form()
+        new_id = str(form.get("id") or "").strip()
+        existing = await _dispatch(
+            handle, type="operations-trains", method="list",
+        )
+        if new_id and any((t.get("id") == new_id) for t in existing):
+            ctx = await _fetch_trains_context()
+            return templates.TemplateResponse(
+                request, "_operations_trains_table.html",
+                ctx | {"create_error": (
+                    f"Train id {new_id!r} already exists."
+                )},
+            )
+        payload = {k: str(v) for k, v in form.items() if v != ""}
+        await _dispatch(
+            handle, type="operations-trains", method="put", data=payload,
+        )
+        ctx = await _fetch_trains_context()
+        _nudge("operations-trains")
+        return templates.TemplateResponse(
+            request, "_operations_trains_table.html", ctx,
+        )
+
+    @app.get("/operations/trains/{train_id}/edit", response_class=HTMLResponse)
+    async def operations_trains_edit(request: Request, train_id: str) -> Any:
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Car, Engine, Location, Route, Station, Train,
+        )
+        row = await _dispatch(
+            handle, type="operations-trains", method="get",
+            data={"id": train_id},
+        )
+        [train] = _ops_rosters_project([row], Train)
+        route_rows_raw = await _dispatch(
+            handle, type="operations-routes", method="list",
+        )
+        route_rows = [
+            dict(r, locations=r.get("stops") or []) for r in route_rows_raw
+        ]
+        routes = _ops_rosters_project(route_rows, Route)
+        routes_by_id = {r.id: r for r in routes}
+        stations = _ops_rosters_project(
+            await _dispatch(
+                handle, type="operations-stations", method="list",
+            ),
+            Station,
+        )
+        station_name = {s.id: s.name or s.id for s in stations}
+        schedule_rows = _build_train_schedule_rows(
+            train=train, routes_by_id=routes_by_id,
+            station_name=station_name,
+        )
+        # Derive the roster-sourced option lists for the Build card's
+        # Engine Road / Engine Model / Caboose Road dropdowns, plus
+        # catalogs for the Specific Engine / Specific Caboose and the
+        # Assigned Cars matrix.
+        engines = _ops_rosters_project(
+            await _dispatch(handle, type="operations-engines", method="list"),
+            Engine,
+        )
+        cars = _ops_rosters_project(
+            await _dispatch(handle, type="operations-cars", method="list"),
+            Car,
+        )
+        locations = _ops_rosters_project(
+            await _dispatch(
+                handle, type="operations-locations", method="list",
+            ),
+            Location,
+        )
+        engine_roads = sorted({
+            e.road_name for e in engines if e.road_name
+        })
+        engine_models = sorted({
+            e.model for e in engines if e.model
+        })
+        caboose_roads = sorted({
+            c.road_name for c in cars
+            if c.road_name and c.type.lower() == "caboose"
+        })
+        # Sort engines and cabooses by road + number for predictable
+        # dropdown order.
+        def _rs_key(x: Any) -> tuple[str, str]:
+            return ((x.road_name or "").lower(), (x.road_number or "").lower())
+        engines_catalog = sorted(engines, key=_rs_key)
+        cabooses_catalog = sorted(
+            [c for c in cars if c.type.lower() == "caboose"],
+            key=_rs_key,
+        )
+        cars_catalog = sorted(cars, key=_rs_key)
+        car_location_name_by_id = {
+            l.id: l.name or l.id for l in locations
+        }
+        # Distinct car types present in the roster, for the Assigned
+        # Cars Type dropdown.
+        car_types_in_roster = sorted({
+            c.type for c in cars if c.type
+        }, key=str.lower)
+        # Pre-built catalog payload for the JS picker. Emitted via
+        # ``|tojson`` so an ampersand in a road name (e.g. "D&RGW")
+        # survives as a literal "&" in the JSON string rather than the
+        # HTML entity "&amp;" that Jinja's default auto-escape would
+        # produce.
+        def _car_label(c: Car) -> str:
+            base = f"{c.road_name} {c.road_number}".strip()
+            if c.location_id:
+                loc = car_location_name_by_id.get(c.location_id, c.location_id)
+                return f"{base} ({loc})"
+            return base
+        cars_catalog_json = [
+            {"id": c.id, "type": c.type, "label": _car_label(c)}
+            for c in cars_catalog
+        ]
+        return templates.TemplateResponse(
+            request, "operations_train_edit.html",
+            _base_context(handle, "operations") | {
+                "train": train,
+                "routes": routes,
+                "schedule_rows": schedule_rows,
+                "engine_roads": engine_roads,
+                "engine_models": engine_models,
+                "caboose_roads": caboose_roads,
+                "engines_catalog": engines_catalog,
+                "cabooses_catalog": cabooses_catalog,
+                "cars_catalog": cars_catalog,
+                "cars_catalog_json": cars_catalog_json,
+                "car_types_catalog": car_types_in_roster,
+                "car_location_name_by_id": car_location_name_by_id,
+            },
+        )
+
+    @app.get(
+        "/operations/trains/{train_id}/schedule_rows",
+        response_class=HTMLResponse,
+    )
+    async def operations_trains_schedule_rows(
+        request: Request, train_id: str,
+    ) -> Any:
+        """Return just the per-stop schedule fragment for the given
+        route/direction. The train edit page re-fetches this fragment
+        on route or direction change so the table reorders (and miles
+        rebuild) immediately, without a full save + re-edit cycle.
+        Query params (htmx-included from the sister select):
+        ``route`` (route id) and ``direction`` (E/W/N/S)."""
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Route, Station, Train,
+        )
+        row = await _dispatch(
+            handle, type="operations-trains", method="get",
+            data={"id": train_id},
+        )
+        [train] = _ops_rosters_project([row], Train)
+        # Override the persisted route_id / direction with the
+        # in-flight form values so the fragment reflects the operator's
+        # un-saved change. Pydantic models are immutable by default;
+        # assignment works because our _AttrModel subclass does not
+        # freeze fields.
+        qs_route = request.query_params.get("route")
+        qs_dir = request.query_params.get("direction")
+        if qs_route is not None:
+            train.route_id = qs_route
+        if qs_dir is not None:
+            train.direction = qs_dir
+        route_rows_raw = await _dispatch(
+            handle, type="operations-routes", method="list",
+        )
+        route_rows = [
+            dict(r, locations=r.get("stops") or []) for r in route_rows_raw
+        ]
+        routes = _ops_rosters_project(route_rows, Route)
+        routes_by_id = {r.id: r for r in routes}
+        stations = _ops_rosters_project(
+            await _dispatch(
+                handle, type="operations-stations", method="list",
+            ),
+            Station,
+        )
+        station_name = {s.id: s.name or s.id for s in stations}
+        schedule_rows = _build_train_schedule_rows(
+            train=train, routes_by_id=routes_by_id,
+            station_name=station_name,
+        )
+        return templates.TemplateResponse(
+            request, "_operations_train_schedule.html",
+            {"schedule_rows": schedule_rows},
+        )
+
+    @app.post("/operations/trains/{train_id}/save", response_class=HTMLResponse)
+    async def operations_trains_save(request: Request, train_id: str) -> Any:
+        form = await request.form()
+        payload: dict[str, Any] = {}
+        # Per-stop parallel arrays. The template emits exactly one
+        # value per row for every array (``stop_stationId``,
+        # ``stop_include``, ``stop_departHour``, ``stop_departMinute``,
+        # ``stop_wait``), so they align by index. ``stop_include`` is
+        # "true" for included rows, "" otherwise -- route-stop rows
+        # always submit "true"; extension rows submit a JS-synced
+        # hidden that mirrors the checkbox state.
+        stn_ids = form.getlist("stop_stationId")
+        includes = form.getlist("stop_include")
+        depart_hours = form.getlist("stop_departHour")
+        depart_minutes = form.getlist("stop_departMinute")
+        waits = form.getlist("stop_wait")
+        stops: list[dict[str, Any]] = []
+        for i, stn_id in enumerate(stn_ids):
+            included = includes[i] if i < len(includes) else "true"
+            if included != "true":
+                continue
+            stops.append({
+                "stationId":    stn_id,
+                "departHour":   depart_hours[i]   if i < len(depart_hours)   else "",
+                "departMinute": depart_minutes[i] if i < len(depart_minutes) else "",
+                "wait":         waits[i]           if i < len(waits)          else "",
+                "included":     "true",
+            })
+        # ``assignedCarIds`` is a repeated form field. Pull the full
+        # list before the generic loop, which would otherwise reduce
+        # the repeats to just the last value.
+        assigned_car_ids = form.getlist("assignedCarIds")
+        # ``redirectTo`` is a form-only marker set by the Build submit
+        # button so a build-request still saves the train first; it
+        # isn't part of the persisted payload.
+        redirect_to = str(form.get("redirectTo") or "")
+        for k, v in form.multi_items():
+            if k.startswith("stop_") or k in ("assignedCarIds", "redirectTo"):
+                continue
+            payload[k] = str(v)
+        payload["assignedCarIds"] = assigned_car_ids
+        payload["id"] = train_id
+        payload["stops"] = stops
+        await _dispatch(
+            handle, type="operations-trains", method="put", data=payload,
+        )
+        _nudge("operations-trains")
+        if redirect_to == "build":
+            # Build button on the edit form: save, then hand control
+            # back to the browser to navigate to /build so the user
+            # doesn't lose manually added/removed assigned cars.
+            response = Response(status_code=204)
+            response.headers["HX-Redirect"] = (
+                f"/operations/trains/{train_id}/build"
+            )
+            return response
+        ctx = await _fetch_trains_context()
+        return templates.TemplateResponse(
+            request, "operations_trains.html",
+            _base_context(handle, "operations") | ctx,
+        )
+
+    @app.delete("/operations/trains/{train_id}", response_class=HTMLResponse)
+    async def operations_trains_delete(request: Request, train_id: str) -> Any:
+        try:
+            await _dispatch(
+                handle, type="operations-trains", method="delete",
+                data={"id": train_id},
+            )
+        except HTTPException:
+            pass
+        ctx = await _fetch_trains_context()
+        _nudge("operations-trains")
+        return templates.TemplateResponse(
+            request, "_operations_trains_table.html", ctx,
+        )
+
+    @app.get("/operations/trains/{train_id}/build", response_class=HTMLResponse)
+    async def operations_trains_build(
+        request: Request, train_id: str,
+    ) -> Any:
+        """Run the train builder against the live roster and render
+        the resulting Manifest."""
+        from datetime import datetime  # noqa: PLC0415
+
+        from pmri_core.operations import build_train  # noqa: PLC0415
+        from pmri_core.persistence.operations_xml import (  # noqa: PLC0415
+            Car, Engine, Location, Route, Station, Train,
+        )
+        row = await _dispatch(
+            handle, type="operations-trains", method="get",
+            data={"id": train_id},
+        )
+        [train] = _ops_rosters_project([row], Train)
+        if not train.route_id:
+            # No route = no manifest; show a stub with a warning.
+            manifest = type("M", (), {
+                "train_id": train.id,
+                "train_name": train.name or train.id,
+                "route_id": "", "route_name": "",
+                "engines": (), "caboose": None, "stops": (),
+                "warnings": (
+                    "This train has no route assigned; nothing to build.",
+                ),
+            })()
+            return templates.TemplateResponse(
+                request, "operations_train_manifest.html",
+                _base_context(handle, "operations") | {
+                    "manifest": manifest,
+                    "car_roster": [],
+                    "is_passenger": (
+                        (train.train_type or "").lower() == "passenger"
+                    ),
+                    "generated_at": datetime.now().strftime(
+                        "%Y-%m-%d %H:%M",
+                    ),
+                },
+            )
+        route_row = await _dispatch(
+            handle, type="operations-routes", method="get",
+            data={"id": train.route_id},
+        )
+        route_row = dict(route_row)
+        route_row["locations"] = route_row.pop("stops", []) or []
+        [route] = _ops_rosters_project([route_row], Route)
+        # Branch trains run over a route that only lists the branch
+        # stops, but the train's effective schedule can extend onto
+        # the parent mainline (stops the user "included" at train-edit
+        # time). Fetch the mainline route and build an effective
+        # Route whose stops come from ``train.stops`` (travel order,
+        # already stripped of un-included extensions), pulling each
+        # stop's metadata (pickups/drops/maxCarMoves) from whichever
+        # of the two routes defines that station.
+        effective_route = route
+        if train.stops:
+            branch_by_sid = {
+                rl.station_id: rl
+                for rl in route.locations
+                if rl.station_id
+            }
+            mainline_by_sid: dict[str, Any] = {}
+            if (
+                route.is_branch == "true"
+                and route.mainline_route_id
+            ):
+                try:
+                    ml_row = await _dispatch(
+                        handle, type="operations-routes", method="get",
+                        data={"id": route.mainline_route_id},
+                    )
+                    ml_row = dict(ml_row)
+                    ml_row["locations"] = ml_row.pop("stops", []) or []
+                    [mainline_route] = _ops_rosters_project(
+                        [ml_row], Route,
+                    )
+                    mainline_by_sid = {
+                        rl.station_id: rl
+                        for rl in mainline_route.locations
+                        if rl.station_id
+                    }
+                except HTTPException:
+                    mainline_by_sid = {}
+            eff_locs = []
+            for ts in train.stops:
+                sid = ts.station_id
+                if not sid:
+                    continue
+                # Branch's own stop wins at the junction station.
+                rl = branch_by_sid.get(sid) or mainline_by_sid.get(sid)
+                if rl is not None:
+                    eff_locs.append(rl)
+            if eff_locs:
+                effective_route = route.model_copy(
+                    update={"locations": eff_locs},
+                )
+        stations = _ops_rosters_project(
+            await _dispatch(
+                handle, type="operations-stations", method="list",
+            ),
+            Station,
+        )
+        locations = _ops_rosters_project(
+            await _dispatch(
+                handle, type="operations-locations", method="list",
+            ),
+            Location,
+        )
+        cars = _ops_rosters_project(
+            await _dispatch(handle, type="operations-cars", method="list"),
+            Car,
+        )
+        engines = _ops_rosters_project(
+            await _dispatch(
+                handle, type="operations-engines", method="list",
+            ),
+            Engine,
+        )
+        manifest = build_train(
+            train=train, route=effective_route, stations=stations,
+            locations=locations, cars=cars, engines=engines,
+        )
+        # Ordered car roll-call: for every car the manifest touches,
+        # record the station where it joins the train (its first pick)
+        # and where it leaves (its first drop after that). The list is
+        # ordered by join-stop sequence so the yard crew can assemble
+        # the consist in the correct physical order. Passenger trains
+        # don't have a switch list, so the template suppresses the
+        # per-stop drops/picks section entirely for them; this roster
+        # is the one place the user sees what's on the train.
+        car_roster: list[dict[str, str]] = []
+        seen_cars: set[str] = set()
+        for stop in manifest.stops:
+            for pick in stop.picks:
+                if pick.car_id in seen_cars:
+                    continue
+                seen_cars.add(pick.car_id)
+                drop_station = ""
+                for later in manifest.stops:
+                    if later.sequence_id < stop.sequence_id:
+                        continue
+                    hit = next(
+                        (d for d in later.drops if d.car_id == pick.car_id),
+                        None,
+                    )
+                    if hit is not None:
+                        drop_station = hit.to_location_name or later.station_name
+                        break
+                car_roster.append({
+                    "car_id": pick.car_id,
+                    "road_name": pick.road_name,
+                    "road_number": pick.road_number,
+                    "car_type": pick.car_type,
+                    "from_station_name": stop.station_name,
+                    "to_station_name": drop_station,
+                })
+        is_passenger = (train.train_type or "").lower() == "passenger"
+        return templates.TemplateResponse(
+            request, "operations_train_manifest.html",
+            _base_context(handle, "operations") | {
+                "manifest": manifest,
+                "car_roster": car_roster,
+                "is_passenger": is_passenger,
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            },
+        )
+
     # ----- panel viewer -----------------------------------------------------
 
     @app.get("/panel", response_class=HTMLResponse)

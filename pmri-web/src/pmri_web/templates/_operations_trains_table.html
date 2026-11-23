@@ -1,0 +1,45 @@
+<table id="operations-trains-table"
+       hx-get="/operations/trains/refresh"
+       hx-trigger="pmri:operations-trains from:body"
+       hx-target="#operations-trains-table" hx-swap="outerHTML">
+  <thead>
+    <tr><th>Name</th><th>Type</th><th>Class</th><th>Dir.</th>
+        <th>Description</th><th>Route</th><th>Depart</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% if create_error %}
+    <tr><td colspan="8" class="danger">{{ create_error }}</td></tr>
+    {% endif %}
+    {% for t in trains %}
+    <tr data-train="{{ t.id }}">
+      <td>{{ t.name or t.id }}</td>
+      <td class="small">{{ t.train_type }}</td>
+      <td class="small">
+        {% if t.train_class == "X" %}Extra
+        {% elif t.train_class %}Class {{ t.train_class }}
+        {% endif %}
+      </td>
+      <td class="small">{{ t.direction }}</td>
+      <td class="small">{{ t.description }}</td>
+      <td>{{ (routes_by_id.get(t.route_id).name if routes_by_id and t.route_id in routes_by_id else t.route_id) or "" }}</td>
+      <td class="mono">
+        {% if t.depart_hour or t.depart_minute %}
+        <span class="time-cell" data-h="{{ t.depart_hour or 0 }}" data-m="{{ t.depart_minute or 0 }}">{{ t.depart_hour }}:{{ "%02d"|format((t.depart_minute or "0") | int) }}</span>
+        {% else %}&mdash;{% endif %}
+      </td>
+      <td>
+        <a href="/operations/trains/{{ t.id }}/build" class="button"
+           title="Produce the train's manifest from the current roster">Build</a>
+        <a href="/operations/trains/{{ t.id }}/edit" class="button">Edit</a>
+        <button class="danger"
+                hx-delete="/operations/trains/{{ t.id }}"
+                hx-target="#operations-trains-table" hx-swap="outerHTML"
+                hx-confirm="Delete train {{ t.name or t.id }}?">Delete</button>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not trains %}
+    <tr><td colspan="8" class="muted">No trains yet — add one above.</td></tr>
+    {% endif %}
+  </tbody>
+</table>

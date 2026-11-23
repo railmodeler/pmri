@@ -703,6 +703,73 @@ table.cv-variables th, table.cv-variables td {
     text-decoration: underline;
 }
 
+/* ===== Operations Pro ============================================ */
+
+.grid-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(14em, 1fr));
+    gap: 0.6rem 1rem;
+    align-items: baseline;
+}
+.grid-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+.grid-form input[type="text"],
+.grid-form select {
+    width: 100%;
+}
+/* Checkbox labels in a grid-form flow left-to-right (checkbox then
+   text) rather than stacking the caption below the box. The :has()
+   check keeps the rule narrowly scoped so a <label> wrapping any
+   non-checkbox input keeps the column layout. */
+.grid-form label:has(> input[type="checkbox"]) {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+}
+.operations-edit-row {
+    background: var(--surface-hi, #2d323c);
+}
+
+/* Shared depart-time widget (train create + edit). The wrapper is a
+   flex row so the 24h / 12h face AND the "12-hour" toggle stay on
+   one line; the toggle used to wrap below because the wrapper was a
+   block-direction div. */
+.depart-time-widget {
+    display: inline-flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.depart-time-widget .depart-time-24,
+.depart-time-widget .depart-time-12 {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: baseline;
+}
+.car-types-matrix {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11em, 1fr));
+    gap: 0.3rem 0.8rem;
+}
+.car-types-cell {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+}
+.assigned-cars-matrix {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(18em, 1fr));
+    gap: 0.3rem 0.8rem;
+}
+.assigned-car-cell {
+    display: flex;
+    gap: 0.3rem;
+    align-items: baseline;
+}
+
 /* ===== Panel Canvas editor ======================================= */
 
 .panel-editor-shell {

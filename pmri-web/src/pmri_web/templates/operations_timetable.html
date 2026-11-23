@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+{% block title %}Timetable — Operations Pro{% endblock %}
+{% block content %}
+{% set qs_type = ("&type=" ~ type_filter) if type_filter else "" %}
+<h2 class="no-print">Timetable</h2>
+<p class="no-print row" style="gap:1rem;flex-wrap:wrap;align-items:baseline">
+  <a href="/operations">&larr; Operations Pro</a>
+  <button type="button" onclick="window.print()">Print</button>
+  <label style="display:inline-flex;align-items:center;gap:0.25rem">
+    <input type="checkbox" data-role="tt-12h" /> 12-hour
+  </label>
+  <form method="get" style="display:inline-flex;gap:0.3rem;align-items:center;margin-left:auto">
+    <input type="hidden" name="view" value="{{ view }}" />
+    {% if view == "station" %}<input type="hidden" name="station" value="{{ active_station }}" />{% endif %}
+    {% if view == "route" %}<input type="hidden" name="route" value="{{ active_route }}" />{% endif %}
+    <span class="muted small">Filter:</span>
+    <select name="type" onchange="this.form.submit()">
+      <option value="">All types</option>
+      {% for t in train_types %}
+      <option value="{{ t }}" {% if t == type_filter %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</p>
+
+<nav class="timetable-tabs no-print">
+  <a href="?view=train{{ qs_type }}"
+     class="{% if view == 'train' %}active{% endif %}">By train</a>
+  <a href="?view=station{% if active_station %}&amp;station={{ active_station }}{% endif %}{{ qs_type }}"
+     class="{% if view == 'station' %}active{% endif %}">By station</a>
+  <a href="?view=route{% if active_route %}&amp;route={{ active_route }}{% endif %}{{ qs_type }}"
+     class="{% if view == 'route' %}active{% endif %}">By route</a>
+  <a href="?view=chart{{ qs_type }}"
+     class="{% if view == 'chart' %}active{% endif %}">Stringline</a>
+</nav>
+
+<div class="timetable">
+  <div class="timetable-header">
+    <h1 style="margin:0">{{ railroad }} — Timetable
+      {% if type_filter %}<span class="muted small">({{ type_filter }})</span>{% endif %}
+    </h1>
+    <p class="muted small" style="margin:0.2rem 0 0">
+      Generated {{ generated_at }} ·
+      {{ scheduled|length }} scheduled train{{ "" if scheduled|length == 1 else "s" }}
+      {% if unscheduled %}· {{ unscheduled|length }} unscheduled{% endif %}
+    </p>
+  </div>
+
+  {% if view == "train" %}
+    {% for entry in scheduled %}
+    <section class="timetable-train">
+      <div class="row" style="align-items:baseline;gap:1rem;flex-wrap:wrap">
+        <h3 style="margin:0.4rem 0">{{ entry.train.name or entry.train.id }}</h3>
+        {% if entry.train.train_type %}<span class="badge">{{ entry.train.train_type }}</span>{% endif %}
+        {% if entry.train.train_class %}
+          <span class="badge">{% if entry.train.train_class == "X" %}Extra{% else %}Class {{ entry.train.train_class }}{% endif %}</span>
+        {% endif %}
+        <span class="muted small">
+          Route <em>{{ entry.route.name or entry.route.id }}</em>
+        </span>
+        <span class="muted small">
+          Departs <span class="depart-stamp"
+                       data-h="{{ entry.train.depart_hour or 0 }}"
+                       data-m="{{ entry.train.depart_minute or 0 }}">{{ entry.depart_display }}</span>
+        </span>
+      </div>
+      {% if entry.train.description %}
+      <p class="muted small" style="margin:0">{{ entry.train.description }}</p>
+      {% endif %}
+      {% if entry.stops %}
+      <table class="timetable-stops">
+        <thead>
+          <tr><th>#</th><th>Location</th><th>Miles</th><th>Arrive</th>
+              <th>Wait</th><th>Depart</th><th>Pick</th><th>Drop</th></tr>
+        </thead>
+        <tbody>
+          {% for s in entry.stops %}
+          <tr>
+            <td class="mono">{{ loop.index }}</td>
+            <td>
+              {% if s.stop_type %}<span class="muted small">{{ s.stop_type }}</span> {% endif %}{{ s.name }}{% if s.facilities %} <span class="muted small">{{ s.facilities }}</span>{% endif %}
+            </td>
+            <td class="mono">{{ "%.1f"|format(s.miles) if s.miles else "—" }}</td>
+            <td class="mono"><span class="time-cell" data-h="{{ s.arrive_h }}" data-m="{{ s.arrive_m }}">{{ s.arrive_display }}</span></td>
+            <td class="mono">{{ s.wait }}m</td>
+            <td class="mono"><span class="time-cell" data-h="{{ s.depart_h }}" data-m="{{ s.depart_m }}">{{ s.depart_display }}</span></td>
+            <td class="small">{{ s.pickups or "—" }}</td>
+            <td class="small">{{ s.drops or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted small">Route has no stops yet.</p>
+      {% endif %}
+    </section>
+    {% endfor %}
+
+    {% if unscheduled %}
+    <section class="timetable-unscheduled no-print">
+      <h3>Not scheduled</h3>
+      <p class="muted small">
+        Trains missing a route or a departure time. Edit on the
+        <a href="/operations/trains">Trains tab</a> to include them.
+      </p>
+      <ul>
+        {% for t in unscheduled %}
+        <li>{{ t.name or t.id }}
+          <span class="muted small">
+            ({% if not t.route_id %}no route{% else %}no depart time{% endif %})
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  {% elif view == "station" %}
+    <form method="get" class="no-print row" style="gap:0.5rem;align-items:baseline;margin-bottom:0.75rem">
+      <input type="hidden" name="view" value="station" />
+      {% if type_filter %}<input type="hidden" name="type" value="{{ type_filter }}" />{% endif %}
+      <label>Station
+        <select name="station" onchange="this.form.submit()">
+          {% for sid, sname in station_catalog %}
+          <option value="{{ sid }}" {% if sid == active_station %}selected{% endif %}>{{ sname }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+    {% if active_station %}
+    <section class="timetable-station">
+      <h3 style="margin:0.4rem 0">
+        {{ station_catalog | selectattr(0, "equalto", active_station) | map(attribute=1) | first }}
+      </h3>
+      {% set visits = station_visits.get(active_station, []) %}
+      {% if visits %}
+      <table class="timetable-stops">
+        <thead>
+          <tr><th>Arrive</th><th>Depart</th><th>Wait</th><th>Train</th>
+              <th>Type</th><th>Class</th><th>Route</th><th>Pick</th><th>Drop</th></tr>
+        </thead>
+        <tbody>
+          {% for v in visits %}
+          <tr>
+            <td class="mono"><span class="time-cell"
+              data-h="{{ (v.arrive_sort // 60) }}" data-m="{{ (v.arrive_sort % 60) }}">{{ v.arrive_display }}</span></td>
+            <td class="mono"><span class="time-cell"
+              data-h="{{ (v.arrive_sort + v.wait) // 60 % 24 }}" data-m="{{ (v.arrive_sort + v.wait) % 60 }}">{{ v.depart_display }}</span></td>
+            <td class="mono">{{ v.wait }}m</td>
+            <td>{{ v.train.name or v.train.id }}</td>
+            <td>{{ v.train.train_type }}</td>
+            <td>{% if v.train.train_class == "X" %}Extra{% elif v.train.train_class %}Class {{ v.train.train_class }}{% endif %}</td>
+            <td>{{ v.route.name or v.route.id }}</td>
+            <td class="small">{{ v.pickups or "—" }}</td>
+            <td class="small">{{ v.drops or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No trains visit this station on the current schedule.</p>
+      {% endif %}
+    </section>
+    {% else %}
+    <p class="muted">No stations are referenced by the current trains + routes.</p>
+    {% endif %}
+  {% elif view == "route" %}
+    <form method="get" class="no-print row" style="gap:0.5rem;align-items:baseline;margin-bottom:0.75rem">
+      <input type="hidden" name="view" value="route" />
+      {% if type_filter %}<input type="hidden" name="type" value="{{ type_filter }}" />{% endif %}
+      <label>Route
+        <select name="route" onchange="this.form.submit()">
+          {% for rid, rname in route_catalog %}
+          <option value="{{ rid }}" {% if rid == active_route %}selected{% endif %}>{{ rname }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+
+    {% if route_view %}
+      {% set rv = route_view %}
+      {% set superior_label = {"E": "Eastward", "W": "Westward", "N": "Northward", "S": "Southward"}.get(rv.superior_direction, "Superior") %}
+      {% set opposite_label = {"E": "Westward", "W": "Eastward", "N": "Southward", "S": "Northward"}.get(rv.superior_direction, "Opposite") %}
+      <section class="timetable-route">
+        <h3 style="margin:0.4rem 0">{{ rv.route.name or rv.route.id }}
+          <span class="muted small">— {{ superior_label }} is superior</span>
+        </h3>
+        {% if rv.stations %}
+        <table class="timetable-route-table">
+          <thead>
+            <tr>
+              {# Header row #1: direction banner.
+                 Center spans 6: Miles(2) + Station + Miles(2) + Siding. #}
+              <th colspan="{{ rv.superior|length or 1 }}" class="tr-dir-banner">{{ superior_label }}</th>
+              <th colspan="6" class="tr-center-banner">{{ rv.route.name or rv.route.id }}</th>
+              <th colspan="{{ rv.opposite|length or 1 }}" class="tr-dir-banner">{{ opposite_label }}</th>
+            </tr>
+            <tr>
+              {# Header row #2: class strip + center section headers.
+                 Each "Miles" header spans its two sub-columns. #}
+              {% for p in rv.superior %}<th class="tr-class">{{ p.class_label }}</th>{% endfor %}
+              {% if not rv.superior %}<th class="tr-class muted">—</th>{% endif %}
+              <th colspan="2" class="tr-center">Miles</th>
+              <th class="tr-center">Stations</th>
+              <th colspan="2" class="tr-center">Miles</th>
+              <th class="tr-center">Siding</th>
+              {% for p in rv.opposite | reverse %}<th class="tr-class">{{ p.class_label }}</th>{% endfor %}
+              {% if not rv.opposite %}<th class="tr-class muted">—</th>{% endif %}
+            </tr>
+            <tr>
+              {# Header row #3: train name + type over the class cols,
+                 sub-labels over the Miles columns, "Car CPY" over the
+                 siding column. #}
+              {% for p in rv.superior %}
+              <th class="tr-train">{{ p.train.name or p.train.id }}<br>
+                <span class="muted small">{{ p.train.train_type }}</span>
+                {% if p.from_branch %}<br><span class="muted small">(via {{ p.branch_route_name }})</span>{% endif %}</th>
+              {% endfor %}
+              {% if not rv.superior %}<th class="muted">—</th>{% endif %}
+              <th class="tr-center muted small">From Start</th>
+              <th class="tr-center muted small">Per Stop</th>
+              <th class="tr-center">&nbsp;</th>
+              <th class="tr-center muted small">From End</th>
+              <th class="tr-center muted small">Per Stop</th>
+              <th class="tr-center muted small">Car CPY</th>
+              {% for p in rv.opposite | reverse %}
+              <th class="tr-train">{{ p.train.name or p.train.id }}<br>
+                <span class="muted small">{{ p.train.train_type }}</span>
+                {% if p.from_branch %}<br><span class="muted small">(via {{ p.branch_route_name }})</span>{% endif %}</th>
+              {% endfor %}
+              {% if not rv.opposite %}<th class="muted">—</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for st in rv.stations %}
+            <tr>
+              {% for p in rv.superior %}
+                {% set v = st.visits.get(p.train.id) %}
+                {% set is_meet = rv.meet_marks.get((st.station_id, p.train.id)) %}
+                <td class="mono tr-time{% if is_meet %} tr-meet{% endif %}">
+                  {% if v %}<span class="time-cell"
+                      data-h="{{ (v.depart_minutes // 60) % 24 }}"
+                      data-m="{{ v.depart_minutes % 60 }}">{{ v.depart_display }}</span>{% endif %}
+                </td>
+              {% endfor %}
+              {% if not rv.superior %}<td class="muted">&nbsp;</td>{% endif %}
+              <td class="mono tr-center-mi">{{ "%.1f"|format(st.cum_forward) }}</td>
+              <td class="mono tr-center-mi">{{ "%.1f"|format(st.miles_from_prev) }}</td>
+              <td class="tr-center-station">
+                {% if st.stop_type %}<span class="muted small">{{ st.stop_type }}</span> {% endif %}
+                {{ st.name }}
+                {% if st.facilities %} <span class="muted small">{{ st.facilities }}</span>{% endif %}
+              </td>
+              <td class="mono tr-center-mi">{{ "%.1f"|format(st.cum_reverse) }}</td>
+              <td class="mono tr-center-mi">{{ "%.1f"|format(st.miles_to_next) }}</td>
+              <td class="mono tr-center-mi">{{ st.siding_capacity or "—" }}</td>
+              {% for p in rv.opposite | reverse %}
+                {% set v = st.visits.get(p.train.id) %}
+                {% set is_meet = rv.meet_marks.get((st.station_id, p.train.id)) %}
+                <td class="mono tr-time{% if is_meet %} tr-meet{% endif %}">
+                  {% if v %}<span class="time-cell"
+                      data-h="{{ (v.depart_minutes // 60) % 24 }}"
+                      data-m="{{ v.depart_minutes % 60 }}">{{ v.depart_display }}</span>{% endif %}
+                </td>
+              {% endfor %}
+              {% if not rv.opposite %}<td class="muted">&nbsp;</td>{% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="muted small" style="margin-top:0.5rem">
+          Bold times mark a <em>meet</em>: two trains at the same stop
+          at the same time. The lower-class train must take the siding
+          (see siding capacity next to the station).
+        </p>
+        {% else %}
+        <p class="muted">Route has no stops defined.</p>
+        {% endif %}
+      </section>
+    {% else %}
+    <p class="muted">Pick a route.</p>
+    {% endif %}
+  {% elif view == "chart" %}
+    {% if chart_rows and chart_stations %}
+    {% set left_pad = 160 %}
+    {% set top_pad = 30 %}
+    {% set right_pad = 20 %}
+    {% set bot_pad = 30 %}
+    {% set width_in = 960 %}
+    {% set row_h = 36 %}
+    {% set station_count = chart_stations|length %}
+    {% set canvas_h = top_pad + bot_pad + row_h * station_count %}
+    {% set canvas_w = left_pad + right_pad + width_in %}
+    <section class="timetable-chart">
+      <p class="muted small">
+        Time → right (hour ticks 00-24). Each row is a station; each
+        line is one train. The station order is alphabetical; distance
+        along the Y axis is uniform (PMRI doesn't model mileposts yet).
+      </p>
+      <div style="overflow-x:auto;max-width:100%">
+        <svg viewBox="0 0 {{ canvas_w }} {{ canvas_h }}"
+             width="{{ canvas_w }}" height="{{ canvas_h }}"
+             class="stringline-svg"
+             style="background:#fff;border:1px solid var(--muted,#aaa)">
+          {% for s in chart_stations %}
+            {% set y = top_pad + row_h * loop.index0 + row_h // 2 %}
+            <text x="{{ left_pad - 8 }}" y="{{ y + 4 }}" font-size="11"
+                  fill="#333" text-anchor="end" font-family="sans-serif">{{ s.name }}</text>
+            <line x1="{{ left_pad }}" y1="{{ y }}"
+                  x2="{{ canvas_w - right_pad }}" y2="{{ y }}"
+                  stroke="#ddd" stroke-dasharray="2,3" />
+          {% endfor %}
+          {% for h in range(0, 25) %}
+            {% set x = left_pad + (width_in * h / 24) %}
+            <line x1="{{ x }}" y1="{{ top_pad - 4 }}"
+                  x2="{{ x }}" y2="{{ canvas_h - bot_pad + 4 }}"
+                  stroke="{{ '#888' if h % 6 == 0 else '#ccc' }}" />
+            <text x="{{ x }}" y="{{ top_pad - 8 }}" font-size="10"
+                  fill="#333" text-anchor="middle" font-family="sans-serif">{{ "%02d"|format(h) }}</text>
+          {% endfor %}
+          {% set palette = ["#c0392b","#2980b9","#27ae60","#8e44ad","#d35400","#16a085","#2c3e50","#c0392b"] %}
+          {% for row in chart_rows %}
+            {% set color = palette[loop.index0 % palette|length] %}
+            <polyline
+              points="{% for p in row.points %}{{ left_pad + (width_in * p.t / 1440) }},{{ top_pad + row_h * p.y + row_h // 2 }} {% endfor %}"
+              fill="none" stroke="{{ color }}" stroke-width="2" />
+            <text x="{{ left_pad + (width_in * row.points[0].t / 1440) }}"
+                  y="{{ top_pad + row_h * row.points[0].y + row_h // 2 - 6 }}"
+                  font-size="10" fill="{{ color }}" font-family="sans-serif">{{ row.train.name or row.train.id }}</text>
+          {% endfor %}
+        </svg>
+      </div>
+    </section>
+    {% else %}
+    <p class="muted">No scheduled trains to chart yet. Add stops with
+      wait / travel times and make sure each train has a depart time.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if not scheduled and not unscheduled %}
+  <p class="muted">No trains defined yet. Create some on the
+    <a href="/operations/trains">Trains tab</a>.</p>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  const toggle = document.querySelector('[data-role="tt-12h"]');
+  if (!toggle) return;
+
+  function fmt(h, m, is12) {
+    h = parseInt(h, 10) || 0;
+    m = parseInt(m, 10) || 0;
+    const mm = String(m).padStart(2, "0");
+    if (!is12) return `${String(h).padStart(2, "0")}:${mm}`;
+    const ampm = h >= 12 ? "PM" : "AM";
+    let h12 = h % 12;
+    if (h12 === 0) h12 = 12;
+    return `${h12}:${mm} ${ampm}`;
+  }
+
+  function apply(is12) {
+    document.querySelectorAll(".time-cell, .depart-stamp").forEach((el) => {
+      el.textContent = fmt(el.dataset.h, el.dataset.m, is12);
+    });
+    try { localStorage.setItem("fcFormat12", is12 ? "1" : "0"); } catch (_) {}
+  }
+
+  let initial = false;
+  try { initial = localStorage.getItem("fcFormat12") === "1"; } catch (_) {}
+  toggle.checked = initial;
+  apply(initial);
+  toggle.addEventListener("change", () => apply(toggle.checked));
+})();
+</script>
+
+<style>
+@media print {
+  .no-print, header, footer { display: none !important; }
+  body, .timetable { background: #fff !important; color: #000 !important; }
+  .timetable-train { page-break-inside: avoid; margin-bottom: 1.5rem; }
+  table.timetable-stops { width: 100%; border-collapse: collapse; }
+  table.timetable-stops th, table.timetable-stops td {
+    border: 1px solid #888; padding: 0.15rem 0.4rem;
+  }
+  table.timetable-route-table { width: 100%; border-collapse: collapse; }
+  table.timetable-route-table th,
+  table.timetable-route-table td {
+    border: 1px solid #888; padding: 0.15rem 0.3rem; font-size: 0.85em;
+  }
+  .tr-meet .time-cell { font-weight: bold; }
+}
+.timetable-tabs { display: flex; gap: 0.5rem; margin: 0.5rem 0 1rem; }
+.timetable-tabs a {
+  padding: 0.2rem 0.75rem; border-radius: 4px;
+  text-decoration: none;
+}
+.timetable-tabs a.active { background: var(--accent-dim, #2a6478); color: var(--accent, #4fc3f7); }
+.timetable-train { border-top: 1px solid var(--muted, #ccc); padding-top: 0.5rem; margin-top: 0.75rem; }
+.timetable-train:first-of-type { border-top: 0; }
+table.timetable-stops { margin-top: 0.3rem; }
+
+table.timetable-route-table { border-collapse: collapse; }
+table.timetable-route-table th,
+table.timetable-route-table td {
+  border: 1px solid var(--muted, #555);
+  padding: 0.2rem 0.4rem;
+  text-align: center;
+  vertical-align: middle;
+}
+table.timetable-route-table .tr-dir-banner,
+table.timetable-route-table .tr-center-banner {
+  background: var(--accent-dim, #2a6478);
+  color: var(--accent, #4fc3f7);
+  font-weight: bold;
+}
+table.timetable-route-table .tr-class { font-style: italic; }
+table.timetable-route-table .tr-center-station { text-align: center; font-weight: 500; }
+table.timetable-route-table .tr-center-mi,
+table.timetable-route-table .tr-center { font-size: 0.85em; }
+table.timetable-route-table .tr-meet .time-cell { font-weight: bold; text-decoration: underline; }
+</style>
+{% endblock %}

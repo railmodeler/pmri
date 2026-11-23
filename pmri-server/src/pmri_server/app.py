@@ -734,6 +734,10 @@ def attach_profile_persistence(handle: AppHandle) -> None:
     handle.ctx._roster_profile = active_profile  # type: ignore[attr-defined]
     if hasattr(handle.ctx, "_roster_store"):
         delattr(handle.ctx, "_roster_store")
+    # Drop any stale lazy OperationsStore so the next operations-* call
+    # rebuilds it against the new profile's operations/ directory.
+    if hasattr(handle.ctx, "_operations_store"):
+        delattr(handle.ctx, "_operations_store")
     # LogixNG programs live at ``<profile>/logixng/*.yaml``. Load them
     # onto the manager built in ``build_app`` so the JSON service and
     # the /logixng page see the active profile's programs immediately.

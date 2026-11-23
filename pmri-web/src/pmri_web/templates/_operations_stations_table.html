@@ -1,0 +1,33 @@
+<table id="operations-stations-table"
+       hx-get="/operations/stations/refresh"
+       hx-trigger="pmri:operations-stations from:body"
+       hx-target="#operations-stations-table" hx-swap="outerHTML">
+  <thead>
+    <tr><th>Name</th><th>Facilities</th><th>Siding cap.</th>
+        <th>Locations</th><th>Comment</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% if create_error %}
+    <tr><td colspan="6" class="danger">{{ create_error }}</td></tr>
+    {% endif %}
+    {% for s in stations %}
+    <tr data-station="{{ s.id }}">
+      <td>{{ s.name or s.id }}</td>
+      <td class="mono">{{ s.facilities or "—" }}</td>
+      <td class="mono">{{ s.siding_capacity or "—" }}</td>
+      <td class="mono">{{ locations_by_station.get(s.id, 0) }}</td>
+      <td class="small">{{ s.comment }}</td>
+      <td>
+        <a href="/operations/stations/{{ s.id }}/edit" class="button">Edit</a>
+        <button class="danger"
+                hx-delete="/operations/stations/{{ s.id }}"
+                hx-target="#operations-stations-table" hx-swap="outerHTML"
+                hx-confirm="Delete station {{ s.name or s.id }}?">Delete</button>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not stations %}
+    <tr><td colspan="6" class="muted">No stations yet — add one above.</td></tr>
+    {% endif %}
+  </tbody>
+</table>

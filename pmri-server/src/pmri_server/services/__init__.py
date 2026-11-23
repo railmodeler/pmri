@@ -34,6 +34,14 @@ from pmri_server.services.meta import (
 )
 from pmri_server.services.openlcb import OpenLcbCSService, OpenLcbService
 from pmri_server.services.oblock import OBlockService
+from pmri_server.services.operations import (
+    OperationsCarsService,
+    OperationsEnginesService,
+    OperationsLocationsService,
+    OperationsRoutesService,
+    OperationsStationsService,
+    OperationsTrainsService,
+)
 from pmri_server.services.panel import PanelService
 from pmri_server.services.panel_edit import PanelEditService
 from pmri_server.services.programmer import ProgrammerService
@@ -86,6 +94,12 @@ ALL_SERVICES = [
     ConfigUserService,
     OpenLcbService,
     OpenLcbCSService,
+    OperationsCarsService,
+    OperationsEnginesService,
+    OperationsLocationsService,
+    OperationsStationsService,
+    OperationsRoutesService,
+    OperationsTrainsService,
 ]
 
 
@@ -120,6 +134,12 @@ __all__ = [
     "OBlockService",
     "OpenLcbCSService",
     "OpenLcbService",
+    "OperationsCarsService",
+    "OperationsEnginesService",
+    "OperationsLocationsService",
+    "OperationsRoutesService",
+    "OperationsStationsService",
+    "OperationsTrainsService",
     "PanelService",
     "PanelEditService",
     "PingService",

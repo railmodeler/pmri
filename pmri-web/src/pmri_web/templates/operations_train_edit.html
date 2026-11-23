@@ -1,0 +1,544 @@
+{% extends "base.html" %}
+{% from "_operations_depart_time.html" import depart_time_widget, depart_time_script %}
+{% block title %}Edit train {{ train.name or train.id }} — Operations Pro{% endblock %}
+{% block content %}
+<h2>Train: {{ train.name or train.id }}</h2>
+<p><a href="/operations/trains">&larr; Trains</a></p>
+
+<form hx-post="/operations/trains/{{ train.id }}/save"
+      hx-target="body" hx-swap="outerHTML"
+      hx-push-url="/operations/trains">
+  <div class="card">
+    <h3>Identity</h3>
+    <div class="grid-form">
+      <label>Name
+        <input type="text" name="name" value="{{ train.name }}" /></label>
+      <label>Route
+        <select name="route" id="train-route"
+                hx-get="/operations/trains/{{ train.id }}/schedule_rows"
+                hx-trigger="change"
+                hx-include="#train-direction"
+                hx-target="#train-schedule-wrap"
+                hx-swap="innerHTML">
+          <option value="">(unassigned)</option>
+          {% for r in routes %}
+          <option value="{{ r.id }}"
+                  data-direction="{{ r.direction }}"
+                  data-superior="{{ r.superior_direction }}"
+                  {% if r.id == train.route_id %}selected{% endif %}>
+            {{ r.name or r.id }}
+          </option>
+          {% endfor %}
+        </select></label>
+      <label>Type
+        <select name="trainType">
+          <option value="" {% if not train.train_type %}selected{% endif %}>(unset)</option>
+          <option value="Passenger" {% if train.train_type == "Passenger" %}selected{% endif %}>Passenger</option>
+          <option value="Freight"   {% if train.train_type == "Freight" %}selected{% endif %}>Freight</option>
+          <option value="Mixed"     {% if train.train_type == "Mixed" %}selected{% endif %}>Mixed</option>
+          <option value="Through"   {% if train.train_type == "Through" %}selected{% endif %}>Through</option>
+        </select></label>
+      <label>Class
+        <select name="trainClass">
+          <option value="" {% if not train.train_class %}selected{% endif %}>(unset)</option>
+          <option value="1" {% if train.train_class == "1" %}selected{% endif %}>Class 1</option>
+          <option value="2" {% if train.train_class == "2" %}selected{% endif %}>Class 2</option>
+          <option value="3" {% if train.train_class == "3" %}selected{% endif %}>Class 3</option>
+          <option value="X" {% if train.train_class == "X" %}selected{% endif %}>Extra</option>
+        </select></label>
+      <label>Direction
+        <select name="direction" id="train-direction"
+                hx-get="/operations/trains/{{ train.id }}/schedule_rows"
+                hx-trigger="change"
+                hx-include="#train-route"
+                hx-target="#train-schedule-wrap"
+                hx-swap="innerHTML">
+          <option value="" {% if not train.direction %}selected{% endif %}>(unset)</option>
+          <option value="E" data-pair="EW" {% if train.direction == "E" %}selected{% endif %}>East</option>
+          <option value="W" data-pair="EW" {% if train.direction == "W" %}selected{% endif %}>West</option>
+          <option value="N" data-pair="NS" {% if train.direction == "N" %}selected{% endif %}>North</option>
+          <option value="S" data-pair="NS" {% if train.direction == "S" %}selected{% endif %}>South</option>
+        </select>
+        <span class="muted small">Must match the chosen route's direction pair.</span>
+      </label>
+      <label style="grid-column:1/-1">Description
+        <input type="text" name="description" value="{{ train.description }}" /></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Schedule</h3>
+    <p class="muted small" style="margin-top:-0.4rem">
+      <em>Depart time</em> is the first stop's departure (24h canonical;
+      the editor renders either face). <em>Average speed</em> (in miles
+      per hour) is used to compute per-stop departures from each
+      stop's route <em>miles</em>; override any computed time below
+      by typing in the row.
+    </p>
+    <div class="row" style="gap:1rem;align-items:baseline;flex-wrap:wrap">
+      {{ depart_time_widget("edit", train.depart_hour, train.depart_minute) }}
+      <label>Average speed (mph)
+        <input type="number" name="averageSpeed" value="{{ train.average_speed }}"
+               id="train-average-speed" min="1" max="200" style="width:5em" /></label>
+      <button type="button" id="train-recompute-times">Recompute times</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Per-stop schedule</h3>
+    <p class="muted small" style="margin-top:-0.4rem">
+      One row per stop on the chosen route. <em>Miles</em> comes from
+      the route (not editable here). For branch routes, mainline
+      stops leading into the branch's first stop appear at the top
+      with <em>Include</em> unchecked — tick them to have the train
+      also pass through the main before entering the branch. First
+      <em>included</em> stop's depart/wait is anchored on the
+      Schedule depart time above.
+    </p>
+    <div id="train-schedule-wrap">
+      {% include "_operations_train_schedule.html" %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Build</h3>
+    <p class="muted small" style="margin-top:-0.4rem">
+      Filters feed the auto-selection. "Specific engine" / "Specific
+      caboose" (below) pin a particular unit by id and override the
+      road/model filters. Passenger and Mixed trains don't carry a
+      caboose regardless of the requires bitmask.
+    </p>
+    <div class="grid-form">
+      <label>Number of engines
+        <input type="number" name="numberEngines" value="{{ train.number_engines }}"
+               min="0" max="9" /></label>
+      <label>Requires (bitmask)
+        <input type="number" name="requires" value="{{ train.requires }}"
+               min="0" max="63"
+               title="JMRI requirements bitmask (1=caboose, 2=FRED, ...)" /></label>
+      <label>Engine road
+        <select name="engineRoad">
+          <option value="">(any)</option>
+          {% for r in (engine_roads or []) %}
+          <option value="{{ r }}" {% if train.engine_road == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Engine model
+        <select name="engineModel">
+          <option value="">(any)</option>
+          {% for m in (engine_models or []) %}
+          <option value="{{ m }}" {% if train.engine_model == m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Specific engine
+        <select name="engineId">
+          <option value="">(auto)</option>
+          {% for e in (engines_catalog or []) %}
+          <option value="{{ e.id }}" {% if train.engine_id == e.id %}selected{% endif %}>
+            {{ e.road_name }} {{ e.road_number }}{% if e.model %} — {{ e.model }}{% endif %}
+          </option>
+          {% endfor %}
+        </select></label>
+      <label>Caboose road
+        <select name="cabooseRoad">
+          <option value="">(any)</option>
+          {% for r in (caboose_roads or []) %}
+          <option value="{{ r }}" {% if train.caboose_road == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Specific caboose
+        <select name="cabooseId">
+          <option value="">(auto)</option>
+          {% for c in (cabooses_catalog or []) %}
+          <option value="{{ c.id }}" {% if train.caboose_id == c.id %}selected{% endif %}>
+            {{ c.road_name }} {{ c.road_number }}
+          </option>
+          {% endfor %}
+        </select></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Assigned cars</h3>
+    <p class="muted small" style="margin-top:-0.4rem">
+      Cars this train always carries (passenger consist, named
+      freight). The build picks these first, then auto-fills the
+      rest up to each stop's car-moves cap. Assigned cars can run
+      end-to-end even on trains that don't allow through cars.
+      Pick a type, pick a car of that type, then <em>Add</em>; the
+      selected car is removed from the pool (re-add it from another
+      train's roster if needed).
+    </p>
+    {% if cars_catalog %}
+    {# Catalog payload read by the JS picker: one JSON element per
+       car with id/type/label. Emitted via ``|tojson`` so characters
+       like ``&`` in road names survive as literal ``&`` (not the
+       HTML entity ``&amp;``) when ``JSON.parse`` reads them back. #}
+    <script type="application/json" id="cars-catalog-json">{{ cars_catalog_json | tojson }}</script>
+    <div class="row" style="gap:0.5rem;align-items:baseline;flex-wrap:wrap">
+      <label>Type
+        <select id="assigned-car-type-picker">
+          <option value="">(any)</option>
+          {% for t in (car_types_catalog or []) %}
+          <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select></label>
+      <label>Car
+        <select id="assigned-car-id-picker">
+          <option value="">(pick a type first)</option>
+        </select></label>
+      <button type="button" id="assigned-car-add-btn">Add to train</button>
+    </div>
+    <ul id="assigned-cars-list" style="list-style:none;padding-left:0;margin-top:0.6rem">
+      {% for cid in train.assigned_car_ids %}
+      <li data-assigned-car="{{ cid }}"
+          style="display:flex;gap:0.5rem;align-items:baseline;padding:0.2rem 0">
+        <input type="hidden" name="assignedCarIds" value="{{ cid }}" />
+        <span data-assigned-car-label>
+          {# Server-side label from the catalog, fall back to id. #}
+          {% set match = (cars_catalog | selectattr("id", "equalto", cid) | list) %}
+          {% if match %}
+            {{ match[0].road_name }} {{ match[0].road_number }}
+            <span class="muted small">— {{ match[0].type }}{% if match[0].location_id %}, at {{ car_location_name_by_id.get(match[0].location_id, match[0].location_id) }}{% endif %}</span>
+          {% else %}
+            {{ cid }}
+            <span class="muted small">(not in roster)</span>
+          {% endif %}
+        </span>
+        <button type="button" class="danger small"
+                data-assigned-car-remove>Remove</button>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted small">No cars in the roster yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Build options</h3>
+    <div class="grid-form">
+      <label><input type="checkbox" name="buildNormal"   value="true" {% if train.build_normal   == "true" %}checked{% endif %} /> Build normal</label>
+      <label><input type="checkbox" name="toTerminal"    value="true" {% if train.to_terminal    == "true" %}checked{% endif %} /> Send cars to terminal</label>
+      <label><input type="checkbox" name="allowLocalMoves" value="true" {% if train.allow_local_moves == "true" %}checked{% endif %} /> Allow local moves</label>
+      <label><input type="checkbox" name="allowReturn"   value="true" {% if train.allow_return   == "true" %}checked{% endif %} /> Allow return to staging</label>
+      <label><input type="checkbox" name="allowThroughCars" value="true" {% if train.allow_through_cars == "true" %}checked{% endif %} /> Allow through cars</label>
+    </div>
+  </div>
+
+  <div class="card row" style="gap:0.5rem;align-items:baseline">
+    <button type="submit">Save</button>
+    <a href="/operations/trains" class="button">Cancel</a>
+    <button type="submit" name="redirectTo" value="build"
+            title="Save manually added/removed cars, then build the manifest">Build</button>
+    <span style="margin-left:auto"></span>
+    <button type="button" class="danger"
+            hx-delete="/operations/trains/{{ train.id }}"
+            hx-target="body" hx-swap="outerHTML"
+            hx-push-url="/operations/trains"
+            hx-confirm="Delete train {{ train.name or train.id }}?">Delete train</button>
+  </div>
+</form>
+
+{{ depart_time_script() }}
+<script>
+(function () {
+  // Assigned-cars picker: Type -> Car dropdown -> Add button, plus a
+  // Remove button per listed car. Each entry in the list is a <li>
+  // with a hidden ``assignedCarIds`` input, so the form submits the
+  // final assignment as a positional array just like before. The
+  // picker filters the car dropdown by the chosen type, and excludes
+  // cars already assigned.
+  const catalogEl = document.getElementById("cars-catalog-json");
+  const typePicker = document.getElementById("assigned-car-type-picker");
+  const carPicker = document.getElementById("assigned-car-id-picker");
+  const addBtn = document.getElementById("assigned-car-add-btn");
+  const list = document.getElementById("assigned-cars-list");
+  if (catalogEl && typePicker && carPicker && addBtn && list) {
+    let catalog = [];
+    try { catalog = JSON.parse(catalogEl.textContent || "[]"); }
+    catch (_) { catalog = []; }
+    function assignedIds() {
+      return Array.from(list.querySelectorAll("[data-assigned-car]"))
+        .map((li) => li.dataset.assignedCar);
+    }
+    function refreshCarPicker() {
+      const t = typePicker.value;
+      const taken = new Set(assignedIds());
+      const pool = catalog.filter((c) => {
+        if (taken.has(c.id)) return false;
+        return !t || c.type === t;
+      });
+      carPicker.innerHTML = "";
+      if (!pool.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = t ? "(no cars of that type available)" : "(no cars available)";
+        carPicker.appendChild(opt);
+        return;
+      }
+      pool.forEach((c) => {
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = c.label;
+        carPicker.appendChild(opt);
+      });
+    }
+    function addCar(cid) {
+      const c = catalog.find((x) => x.id === cid);
+      if (!c) return;
+      const li = document.createElement("li");
+      li.dataset.assignedCar = cid;
+      li.style.display = "flex";
+      li.style.gap = "0.5rem";
+      li.style.alignItems = "baseline";
+      li.style.padding = "0.2rem 0";
+      const hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "assignedCarIds";
+      hidden.value = cid;
+      li.appendChild(hidden);
+      const label = document.createElement("span");
+      label.textContent = c.label + " (" + c.type + ")";
+      li.appendChild(label);
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "danger small";
+      rm.textContent = "Remove";
+      rm.setAttribute("data-assigned-car-remove", "");
+      rm.addEventListener("click", () => {
+        li.remove();
+        refreshCarPicker();
+      });
+      li.appendChild(rm);
+      list.appendChild(li);
+    }
+    typePicker.addEventListener("change", refreshCarPicker);
+    addBtn.addEventListener("click", () => {
+      const cid = carPicker.value;
+      if (!cid) return;
+      addCar(cid);
+      refreshCarPicker();
+    });
+    // Wire the existing Remove buttons (server-rendered rows).
+    list.querySelectorAll("[data-assigned-car-remove]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const li = btn.closest("[data-assigned-car]");
+        if (li) li.remove();
+        refreshCarPicker();
+      });
+    });
+    refreshCarPicker();
+  }
+})();
+
+(function () {
+  // Train direction is constrained to the chosen route's direction
+  // pair. Matches the route-edit page's wiring.
+  const routeSel = document.getElementById("train-route");
+  const dirSel = document.getElementById("train-direction");
+  if (!routeSel || !dirSel) return;
+
+  function filterDirectionOptions() {
+    const opt = routeSel.options[routeSel.selectedIndex];
+    const pair = (opt && opt.dataset.direction) || "";
+    let keptSelection = false;
+    Array.from(dirSel.options).forEach((o) => {
+      if (!o.value) return;
+      const match = !pair || o.dataset.pair === pair;
+      o.hidden = !match;
+      o.disabled = !match;
+      if (o.selected && !match) o.selected = false;
+      if (o.selected) keptSelection = true;
+    });
+    if (!keptSelection && !dirSel.value) dirSel.selectedIndex = 0;
+  }
+
+  routeSel.addEventListener("change", filterDirectionOptions);
+  filterDirectionOptions();
+})();
+
+(function () {
+  // Per-stop depart cells carry a hidden canonical 24h pair plus two
+  // visible "faces" (24h / 12h-with-AM/PM). The face shown follows the
+  // same ``fcFormat12`` preference key the top Schedule widget uses,
+  // so toggling at the top also flips every row. Changing either face
+  // updates the canonical.
+  function get12h() {
+    try { return localStorage.getItem("fcFormat12") === "1"; }
+    catch (_) { return false; }
+  }
+
+  function setCanonical(cell, h24, m24) {
+    cell.querySelector('[data-canonical="h"]').value = h24 === "" || h24 == null ? "" : String(h24);
+    cell.querySelector('[data-canonical="m"]').value = m24 === "" || m24 == null ? "" : String(m24);
+    cell.dataset.h = h24 === "" || h24 == null ? "" : String(h24);
+    cell.dataset.m = m24 === "" || m24 == null ? "" : String(m24);
+  }
+
+  function populateFaces(cell) {
+    const rawH = cell.dataset.h;
+    const rawM = cell.dataset.m;
+    const hasH = rawH !== "" && rawH != null;
+    const hasM = rawM !== "" && rawM != null;
+    const h = hasH ? parseInt(rawH, 10) : null;
+    const m = hasM ? parseInt(rawM, 10) : null;
+    const f24h = cell.querySelector('[data-face="24h-h"]');
+    const f24m = cell.querySelector('[data-face="24h-m"]');
+    const f12h = cell.querySelector('[data-face="12h-h"]');
+    const f12m = cell.querySelector('[data-face="12h-m"]');
+    const f12ap = cell.querySelector('[data-face="12h-ap"]');
+    f24h.value = hasH ? String(h) : "";
+    f24m.value = hasM ? String(m).padStart(2, "0") : "";
+    if (!hasH && !hasM) {
+      f12h.value = ""; f12m.value = ""; f12ap.value = "AM";
+      return;
+    }
+    const h24v = hasH ? h : 0;
+    let h12 = h24v % 12;
+    if (h12 === 0) h12 = 12;
+    f12h.value = String(h12);
+    f12m.value = hasM ? String(m).padStart(2, "0") : "00";
+    f12ap.value = h24v >= 12 ? "PM" : "AM";
+  }
+
+  function pushFromFace(cell, is12) {
+    let h, m;
+    if (is12) {
+      const rawH = cell.querySelector('[data-face="12h-h"]').value;
+      const rawM = cell.querySelector('[data-face="12h-m"]').value;
+      const ap = cell.querySelector('[data-face="12h-ap"]').value;
+      if (!rawH && !rawM) { setCanonical(cell, "", ""); return; }
+      let h12 = parseInt(rawH, 10);
+      if (!Number.isFinite(h12)) h12 = 12;
+      h12 = Math.max(1, Math.min(12, h12));
+      h = h12 % 12;
+      if (ap === "PM") h += 12;
+      m = parseInt(rawM, 10);
+      if (!Number.isFinite(m)) m = 0;
+      m = Math.max(0, Math.min(59, m));
+    } else {
+      const rawH = cell.querySelector('[data-face="24h-h"]').value;
+      const rawM = cell.querySelector('[data-face="24h-m"]').value;
+      if (!rawH && !rawM) { setCanonical(cell, "", ""); return; }
+      h = parseInt(rawH, 10);
+      if (!Number.isFinite(h)) h = 0;
+      h = Math.max(0, Math.min(23, h));
+      m = parseInt(rawM, 10);
+      if (!Number.isFinite(m)) m = 0;
+      m = Math.max(0, Math.min(59, m));
+    }
+    setCanonical(cell, String(h), String(m));
+  }
+
+  function applyMode(is12) {
+    document.querySelectorAll(".stop-depart").forEach((cell) => {
+      cell.querySelector(".face-24h").style.display = is12 ? "none" : "";
+      cell.querySelector(".face-12h").style.display = is12 ? "" : "none";
+      populateFaces(cell);
+    });
+  }
+
+  // Idempotent per-row wiring. Marks each wired cell/checkbox with
+  // ``data-wired`` so a re-run after htmx swap doesn't double up
+  // listeners on surviving elements -- but freshly swapped-in rows
+  // still get wired on the second call.
+  function wireScheduleRows() {
+    document.querySelectorAll(".stop-depart").forEach((cell) => {
+      populateFaces(cell);
+      if (cell.dataset.wired === "1") return;
+      cell.dataset.wired = "1";
+      cell.querySelectorAll('[data-face]').forEach((inp) => {
+        inp.addEventListener("input", () => {
+          pushFromFace(cell, get12h());
+          populateFaces(cell);
+        });
+      });
+    });
+    document.querySelectorAll('[data-included]').forEach((cb) => {
+      if (cb.dataset.wired === "1") return;
+      cb.dataset.wired = "1";
+      const row = cb.closest('[data-schedule-row]');
+      if (!row) return;
+      const hidden = row.querySelector('[data-include-hidden]');
+      if (!hidden) return;
+      cb.addEventListener('change', () => {
+        hidden.value = cb.checked ? 'true' : '';
+      });
+    });
+    applyMode(get12h());
+  }
+
+  wireScheduleRows();
+
+  // htmx re-swaps the schedule table when route or direction
+  // changes; re-wire the new rows.
+  const scheduleWrap = document.getElementById("train-schedule-wrap");
+  if (scheduleWrap) {
+    scheduleWrap.addEventListener("htmx:afterSwap", () => {
+      wireScheduleRows();
+    });
+  }
+
+  // The top-level Schedule depart widget's 12/24 toggle also flips
+  // every per-stop cell; listen for its ``change`` event.
+  const topToggle = document.querySelector(
+    '[data-depart-widget="edit"] [data-role="depart-12h"]',
+  );
+  if (topToggle) {
+    topToggle.addEventListener("change", () => applyMode(topToggle.checked));
+  }
+  // And another tab changing the preference (storage event).
+  window.addEventListener("storage", (ev) => {
+    if (ev.key === "fcFormat12") applyMode(ev.newValue === "1");
+  });
+
+  // Recompute per-stop times from average speed + route miles.
+  const btn = document.getElementById("train-recompute-times");
+  const speedInput = document.getElementById("train-average-speed");
+  const topH24 = document.querySelector('[data-depart-widget="edit"] input[name="departHour"]');
+  const topM24 = document.querySelector('[data-depart-widget="edit"] input[name="departMinute"]');
+  if (!btn || !speedInput || !topH24 || !topM24) return;
+
+  function wrapHM(total) {
+    total = ((total % 1440) + 1440) % 1440;
+    return {h: Math.floor(total / 60), m: total % 60};
+  }
+
+  btn.addEventListener("click", () => {
+    const table = document.getElementById("train-schedule-table");
+    if (!table) return;
+    const speed = parseFloat(speedInput.value);
+    if (!(speed > 0)) {
+      alert("Set an average speed (mph) before recomputing.");
+      return;
+    }
+    const startH = parseInt(topH24.value, 10);
+    const startM = parseInt(topM24.value, 10);
+    if (!Number.isFinite(startH) || !Number.isFinite(startM)) {
+      alert("Set the Schedule depart time before recomputing.");
+      return;
+    }
+    const rows = Array.from(table.querySelectorAll("[data-schedule-row]"));
+    let cur = startH * 60 + startM;
+    let seenFirst = false;
+    rows.forEach((row) => {
+      const inc = row.querySelector('[data-included]');
+      const included = inc ? inc.checked : true;
+      if (!included) return;
+      const miles = parseFloat(row.dataset.miles) || 0;
+      if (seenFirst) cur += Math.round((miles / speed) * 60);
+      const hm = wrapHM(cur);
+      const cell = row.querySelector(".stop-depart");
+      if (cell) {
+        setCanonical(cell, String(hm.h), String(hm.m).padStart(2, "0"));
+        populateFaces(cell);
+      }
+      const wait = parseInt(row.querySelector('[data-wait]').value, 10) || 0;
+      cur += wait;
+      seenFirst = true;
+    });
+  });
+})();
+</script>
+{% endblock %}

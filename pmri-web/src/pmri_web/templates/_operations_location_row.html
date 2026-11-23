@@ -1,0 +1,35 @@
+{% set _l = l %}
+{% set _dir = (_l.dir | int) if _l.dir and _l.dir.isdigit() else 0 %}
+{% set _cars = (current_cars_by_location or {}).get(_l.id, 0) %}
+{% set _stations = station_name_by_id or {} %}
+<tr data-location="{{ _l.id }}">
+  <td>{{ _l.name or _l.id }}</td>
+  <td class="small">{{ _stations.get(_l.station_id, _l.station_id) or "—" }}</td>
+  <td>
+    {% if _l.kind == "yard" %}Yard
+    {% elif _l.kind == "spur" %}Spur
+    {% elif _l.kind == "interchange" %}Interchange
+    {% elif _l.kind == "staging" or _l.ops == "2" %}Staging
+    {% elif _l.ops == "1" %}Normal
+    {% else %}<span class="muted">&mdash;</span>{% endif %}
+  </td>
+  <td class="small">
+    {% if _dir %}
+      {% if _dir % 2 == 1 %}E {% endif %}
+      {% if (_dir // 2) % 2 == 1 %}W {% endif %}
+      {% if (_dir // 4) % 2 == 1 %}N {% endif %}
+      {% if (_dir // 8) % 2 == 1 %}S {% endif %}
+    {% else %}<span class="muted">&mdash;</span>{% endif %}
+  </td>
+  <td class="mono">{{ _l.length or "—" }}</td>
+  <td class="mono">{{ _cars }}</td>
+  <td class="small">{{ _l.car_types|length }}</td>
+  <td class="small">{{ _l.comment }}</td>
+  <td>
+    <a href="/operations/locations/{{ _l.id }}/edit" class="button">Edit</a>
+    <button class="danger"
+            hx-delete="/operations/locations/{{ _l.id }}"
+            hx-target="#operations-locations-table" hx-swap="outerHTML"
+            hx-confirm="Delete location {{ _l.name or _l.id }}? (Tracks + types stored on this location will be lost.)">Delete</button>
+  </td>
+</tr>

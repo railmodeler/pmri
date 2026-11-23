@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Edit station {{ station.name or station.id }} — Operations Pro{% endblock %}
+{% block content %}
+<h2>Station: {{ station.name or station.id }}</h2>
+<p><a href="/operations/stations">&larr; Stations</a></p>
+
+<form hx-post="/operations/stations/{{ station.id }}/save"
+      hx-target="body" hx-swap="outerHTML"
+      hx-push-url="/operations/stations">
+  <div class="card">
+    <h3>Identity</h3>
+    <div class="grid-form">
+      <label>Name
+        <input type="text" name="name" value="{{ station.name }}" /></label>
+      <label style="grid-column:1/-1">Comment
+        <input type="text" name="comment" value="{{ station.comment }}" /></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Amenities</h3>
+    <p class="muted small" style="margin-top:-0.4rem">
+      Facilities and siding capacity are fixed to the station and
+      shown on every timetable that reaches it.
+    </p>
+    <div class="grid-form">
+      <label>Facilities
+        <input type="text" name="facilities" value="{{ station.facilities }}"
+               placeholder="TGCWT"
+               title="Free-text letter code for amenities (telegraph, coal, water, wye, turntable...)." /></label>
+      <label>Siding capacity
+        <input type="number" name="sidingCapacity"
+               value="{{ station.siding_capacity }}" min="0" max="999"
+               style="width:6em" placeholder="—"
+               title="Cars the passing siding holds; blank means no siding." /></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Position</h3>
+    <div class="grid-form">
+      <label>Physical location
+        <input type="text" name="physicalLocation"
+               value="{{ station.physical_location }}" /></label>
+      <label>Division
+        <input type="text" name="divisionId"
+               value="{{ station.division_id }}" /></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Locations at this station</h3>
+    {% if member_locations %}
+    <ul>
+      {% for loc in member_locations %}
+      <li><a href="/operations/locations/{{ loc.id }}/edit">{{ loc.name or loc.id }}</a>
+        <span class="muted small">— {{ loc.kind or "normal" }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted small">
+      No locations yet. Add one on the
+      <a href="/operations/locations">Locations tab</a> and set this
+      station as its parent.
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="card row" style="gap:0.5rem;align-items:baseline">
+    <button type="submit">Save</button>
+    <a href="/operations/stations" class="button">Cancel</a>
+    <span style="margin-left:auto"></span>
+    <button type="button" class="danger"
+            hx-delete="/operations/stations/{{ station.id }}"
+            hx-target="body" hx-swap="outerHTML"
+            hx-push-url="/operations/stations"
+            hx-confirm="Delete station {{ station.name or station.id }}?">Delete station</button>
+  </div>
+</form>
+{% endblock %}

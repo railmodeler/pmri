@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Manifest: {{ manifest.train_name }} — Operations Pro{% endblock %}
+{% block content %}
+<h2 class="no-print">Manifest: {{ manifest.train_name }}</h2>
+<p class="no-print row" style="gap:1rem;flex-wrap:wrap;align-items:baseline">
+  <a href="/operations/trains">&larr; Trains</a>
+  <a href="/operations/trains/{{ manifest.train_id }}/edit">Edit this train</a>
+  <button type="button" onclick="window.print()">Print</button>
+  <a href="/operations/trains/{{ manifest.train_id }}/build" class="button"
+     title="Re-run the build against the current roster">Rebuild</a>
+</p>
+
+<div class="manifest">
+  <div class="manifest-header">
+    <h1 style="margin:0">{{ railroad }} — {{ manifest.train_name }}</h1>
+    <p class="muted small" style="margin:0.2rem 0 0">
+      Route: <em>{{ manifest.route_name }}</em> ·
+      Built {{ generated_at }}
+    </p>
+  </div>
+
+  {% if manifest.warnings %}
+  <div class="card warning">
+    <h3 style="margin-top:0">Warnings</h3>
+    <ul>
+      {% for w in manifest.warnings %}
+      <li>{{ w }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h3>Power</h3>
+    {% if manifest.engines %}
+    <ul>
+      {% for e in manifest.engines %}
+      <li>
+        <strong>{{ e.road_name }} {{ e.road_number }}</strong>
+        {% if e.model %}<span class="muted small">— {{ e.model }}</span>{% endif %}
+        <span class="muted small">(<code class="mono">{{ e.engine_id }}</code>)</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No engines assigned.</p>
+    {% endif %}
+    {% if manifest.caboose %}
+    <p style="margin-top:0.5rem">
+      <strong>Caboose:</strong>
+      {{ manifest.caboose.road_name }} {{ manifest.caboose.road_number }}
+      <span class="muted small">(<code class="mono">{{ manifest.caboose.car_id }}</code>)</span>
+    </p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Cars</h3>
+    {% if car_roster %}
+    <p class="muted small" style="margin-top:-0.4rem">
+      Ordered by the stop each car joins the train. Assemble the
+      consist in this order so set-outs come off in the right
+      sequence.
+    </p>
+    <ol class="manifest-cars-list">
+      {% for c in car_roster %}
+      <li>
+        <strong>{{ c.road_name }} {{ c.road_number }}</strong>
+        <span class="muted small">— {{ c.car_type }}</span>
+        <span class="muted small">(<code class="mono">{{ c.car_id }}</code>)</span>
+        <div class="muted small">
+          Boards at {{ c.from_station_name }}{% if c.to_station_name %};
+          sets out at {{ c.to_station_name }}{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="muted">No cars assigned.</p>
+    {% endif %}
+  </div>
+
+  {% if not is_passenger %}
+  {% for stop in manifest.stops %}
+  <section class="manifest-stop">
+    <div class="row" style="align-items:baseline;gap:1rem;flex-wrap:wrap">
+      <h3 style="margin:0.4rem 0">
+        {{ stop.sequence_id }}. {{ stop.station_name }}
+      </h3>
+      <span class="muted small">
+        {{ stop.moves_used }} / {{ stop.moves_cap }} car-moves used
+      </span>
+    </div>
+    <div class="manifest-grid">
+      <div>
+        <h4>Set out</h4>
+        {% if stop.drops %}
+        <table class="manifest-cars">
+          <thead>
+            <tr><th>Car</th><th>Type</th><th>From</th><th>Track</th></tr>
+          </thead>
+          <tbody>
+            {% for d in stop.drops %}
+            <tr>
+              <td>{{ d.road_name }} {{ d.road_number }}
+                <div class="muted small"><code class="mono">{{ d.car_id }}</code></div></td>
+              <td>{{ d.car_type }}</td>
+              <td class="small">{{ d.from_station_name }}</td>
+              <td>{{ d.to_location_name }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="muted small">No drops.</p>
+        {% endif %}
+      </div>
+      <div>
+        <h4>Pick up</h4>
+        {% if stop.picks %}
+        <table class="manifest-cars">
+          <thead>
+            <tr><th>Car</th><th>Type</th><th>From track</th><th>To</th></tr>
+          </thead>
+          <tbody>
+            {% for p in stop.picks %}
+            <tr>
+              <td>{{ p.road_name }} {{ p.road_number }}
+                <div class="muted small"><code class="mono">{{ p.car_id }}</code></div></td>
+              <td>{{ p.car_type }}</td>
+              <td>{{ p.from_location_name }}</td>
+              <td class="small">{{ p.to_station_name }}
+                <div class="muted small">{{ p.to_location_name }}</div></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="muted small">No pickups.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+  {% endif %}
+</div>
+
+<style>
+@media print {
+  .no-print, header, footer { display: none !important; }
+  body, .manifest { background: #fff !important; color: #000 !important; }
+  .manifest-stop { page-break-inside: avoid; margin-bottom: 1.5rem; }
+  table.manifest-cars { width: 100%; border-collapse: collapse; }
+  table.manifest-cars th, table.manifest-cars td {
+    border: 1px solid #888; padding: 0.15rem 0.4rem;
+  }
+}
+.manifest-header { padding-bottom: 0.4rem; border-bottom: 1px solid var(--muted, #555); }
+.manifest-stop { margin-top: 0.75rem; }
+.manifest-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 720px) {
+  .manifest-grid { grid-template-columns: 1fr; }
+}
+table.manifest-cars { width: 100%; border-collapse: collapse; }
+table.manifest-cars th, table.manifest-cars td {
+  border: 1px solid var(--muted, #555);
+  padding: 0.2rem 0.4rem;
+  vertical-align: top;
+}
+table.manifest-cars th { background: var(--accent-dim, #2a6478); }
+.card.warning { border: 1px solid #c0392b; background: rgba(192,57,43,0.08); }
+ol.manifest-cars-list { margin: 0.4rem 0 0; padding-left: 1.6rem; }
+ol.manifest-cars-list li { margin-bottom: 0.3rem; }
+</style>
+{% endblock %}

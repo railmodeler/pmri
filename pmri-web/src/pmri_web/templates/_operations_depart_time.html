@@ -1,0 +1,144 @@
+{#
+  Depart-time picker macro -- renders a 24h-canonical input pair plus
+  an overlay 12h face (hour + minute + AM/PM) and a "12-hour" toggle
+  that flips between them. Both pages that collect a departure time
+  (train create on /operations/trains and train edit) include this so
+  the behaviour and keyboard focus order stay identical.
+
+  The widget persists the selected format under ``localStorage.fcFormat12``
+  -- the same key the Fast Clock on the home tab reads/writes -- so a
+  user who prefers 12h sees that face everywhere without re-selecting.
+
+  Scoping: every instance carries a unique ``widget_id`` so the inline
+  JS can find its own wrapper by ``data-depart-widget="<id>"`` rather
+  than grabbing the page's first form (which in base.html is the
+  logout form in the header). Pass ``widget_id`` so two instances on
+  one page can coexist.
+
+  Args:
+    widget_id   -- stable DOM id for this instance (e.g. "create", "edit").
+    hour        -- stored 24h hour (0..23) as a string, "" if unset.
+    minute      -- stored minute (0..59) as a string, "" if unset.
+    required    -- if truthy, mark the 24h inputs as HTML required.
+#}
+{% macro depart_time_widget(widget_id, hour, minute, required=False) %}
+<div class="depart-time-widget" data-depart-widget="{{ widget_id }}">
+  <div class="depart-time-24">
+    <label>Hour (0-23)
+      <input type="number" name="departHour" value="{{ hour }}"
+             min="0" max="23" style="width:4em"
+             {% if required %}required{% endif %} /></label>
+    <label>Minute
+      <input type="number" name="departMinute" value="{{ minute }}"
+             min="0" max="59" style="width:4em"
+             {% if required %}required{% endif %} /></label>
+  </div>
+  <div class="depart-time-12" style="display:none">
+    <label>Hour (1-12)
+      <input type="number" data-role="hour12" min="1" max="12" style="width:4em" /></label>
+    <label>Minute
+      <input type="number" data-role="minute12" min="0" max="59" style="width:4em" /></label>
+    <label>Period
+      <select data-role="ampm">
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select></label>
+  </div>
+  <label style="display:inline-flex;align-items:center;gap:0.25rem;margin-left:0.5rem">
+    <input type="checkbox" data-role="depart-12h" /> 12-hour
+  </label>
+</div>
+{% endmacro %}
+
+{#
+  Companion script -- emit ONCE per page that uses the macro. Locates
+  every ``.depart-time-widget`` wrapper, wires both faces together,
+  and initialises the toggle from ``localStorage.fcFormat12``.
+#}
+{% macro depart_time_script() %}
+<script>
+(function () {
+  function clamp(n, lo, hi, dflt) {
+    n = parseInt(n, 10);
+    if (!Number.isFinite(n)) return dflt;
+    return Math.max(lo, Math.min(hi, n));
+  }
+
+  function wire(root) {
+    const box24 = root.querySelector(".depart-time-24");
+    const box12 = root.querySelector(".depart-time-12");
+    const toggle = root.querySelector('[data-role="depart-12h"]');
+    if (!box24 || !box12 || !toggle) return;
+    const h24 = box24.querySelector('input[name="departHour"]');
+    const m24 = box24.querySelector('input[name="departMinute"]');
+    const h12 = box12.querySelector('[data-role="hour12"]');
+    const m12 = box12.querySelector('[data-role="minute12"]');
+    const ap  = box12.querySelector('[data-role="ampm"]');
+
+    function pull24To12() {
+      const hour = clamp(h24.value, 0, 23, 0);
+      const minute = clamp(m24.value, 0, 59, 0);
+      const ampm = hour >= 12 ? "PM" : "AM";
+      let h12v = hour % 12;
+      if (h12v === 0) h12v = 12;
+      h12.value = String(h12v);
+      m12.value = String(minute).padStart(2, "0");
+      ap.value = ampm;
+    }
+
+    function push12To24() {
+      // An entirely empty 12h face means "no time set" -- don't
+      // synthesise "00:00" into the 24h canonical inputs, keep them
+      // blank so a create-train submit without a depart time stays
+      // scheduled-time-free.
+      if (!h12.value && !m12.value) {
+        h24.value = "";
+        m24.value = "";
+        return;
+      }
+      let h = clamp(h12.value, 1, 12, 12) % 12;
+      if (ap.value === "PM") h += 12;
+      h24.value = String(h);
+      m24.value = String(clamp(m12.value, 0, 59, 0));
+    }
+
+    function pull24To12IfSet() {
+      // When BOTH 24h inputs are blank, leave the 12h overlay blank
+      // too -- showing "12 AM" by default misleads an operator who
+      // hasn't entered a schedule yet.
+      if (!h24.value && !m24.value) {
+        h12.value = "";
+        m12.value = "";
+        ap.value = "AM";
+        return;
+      }
+      pull24To12();
+    }
+
+    function setMode(is12) {
+      if (is12) {
+        pull24To12IfSet();
+        box24.style.display = "none";
+        box12.style.display = "";
+      } else {
+        push12To24();
+        box12.style.display = "none";
+        box24.style.display = "";
+      }
+      toggle.checked = is12;
+      try { localStorage.setItem("fcFormat12", is12 ? "1" : "0"); } catch (_) {}
+    }
+
+    let initial12 = false;
+    try { initial12 = localStorage.getItem("fcFormat12") === "1"; } catch (_) {}
+    setMode(initial12);
+
+    toggle.addEventListener("change", () => setMode(toggle.checked));
+    [h12, m12, ap].forEach((inp) => inp.addEventListener("input", push12To24));
+    [h24, m24].forEach((inp) => inp.addEventListener("input", pull24To12IfSet));
+  }
+
+  document.querySelectorAll(".depart-time-widget").forEach(wire);
+})();
+</script>
+{% endmacro %}

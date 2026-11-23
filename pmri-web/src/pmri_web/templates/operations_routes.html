@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Routes — Operations Pro{% endblock %}
+{% block content %}
+<h2>Routes</h2>
+<p><a href="/operations">&larr; Operations Pro</a></p>
+
+<div class="card">
+  <h3>Add a route</h3>
+  <form hx-post="/operations/routes/create"
+        hx-target="#operations-routes-table" hx-swap="outerHTML"
+        class="row" style="gap:0.5rem; flex-wrap:wrap; align-items:baseline">
+    <label>ID
+      <input type="text" name="id" required pattern="[A-Za-z0-9_.:-]+"
+             placeholder="r-1" style="width:8em" /></label>
+    <label>Name
+      <input type="text" name="name" placeholder="Local Line" style="width:14em" /></label>
+    <label>Comment
+      <input type="text" name="comment" placeholder="(optional)" style="width:20em" /></label>
+    <button type="submit">Add</button>
+    <span class="muted small">Add stops in the route editor.</span>
+  </form>
+</div>
+
+<div class="card">
+  {% include "_operations_routes_table.html" %}
+</div>
+{% endblock %}

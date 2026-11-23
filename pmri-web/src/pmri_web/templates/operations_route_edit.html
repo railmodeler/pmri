@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+{% block title %}Edit route {{ route.name or route.id }} — Operations Pro{% endblock %}
+{% block content %}
+<h2>Route: {{ route.name or route.id }}</h2>
+<p><a href="/operations/routes">&larr; Routes</a></p>
+
+<form hx-post="/operations/routes/{{ route.id }}/save"
+      hx-target="body" hx-swap="outerHTML"
+      hx-push-url="/operations/routes">
+  <div class="card">
+    <h3>Route</h3>
+    <div class="grid-form">
+      <label>Name
+        <input type="text" name="name" value="{{ route.name }}" /></label>
+      <label style="grid-column:1/-1">Comment
+        <input type="text" name="comment" value="{{ route.comment }}" /></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Direction</h3>
+    <p class="muted small" style="margin-top:-0.4rem">
+      The pair of cardinal directions the route spans, and which of
+      them is the <em>superior</em> direction. Stop order below should
+      run in the superior direction (so the first stop is the origin
+      for a superior-direction train). Not enforced; the <em>By
+      Route</em> timetable relies on this convention.
+    </p>
+    <div class="grid-form">
+      <label>Direction
+        <select name="direction" id="route-direction">
+          <option value="" {% if not route.direction %}selected{% endif %}>(unset)</option>
+          <option value="EW" {% if route.direction == "EW" %}selected{% endif %}>East / West</option>
+          <option value="NS" {% if route.direction == "NS" %}selected{% endif %}>North / South</option>
+        </select></label>
+      <label>Superior direction
+        <select name="superiorDirection" id="route-superior-direction">
+          <option value="" {% if not route.superior_direction %}selected{% endif %}>(unset)</option>
+          <option value="E" data-pair="EW" {% if route.superior_direction == "E" %}selected{% endif %}>East</option>
+          <option value="W" data-pair="EW" {% if route.superior_direction == "W" %}selected{% endif %}>West</option>
+          <option value="N" data-pair="NS" {% if route.superior_direction == "N" %}selected{% endif %}>North</option>
+          <option value="S" data-pair="NS" {% if route.superior_direction == "S" %}selected{% endif %}>South</option>
+        </select></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Branch</h3>
+    <p class="muted small" style="margin-top:-0.4rem">
+      A route is a mainline unless marked as a branch. A branch
+      attaches to a mainline at one of that mainline's stops and
+      inherits its direction + superior direction automatically.
+    </p>
+    <div class="grid-form">
+      <label><input type="checkbox" name="isBranch" value="true" id="route-is-branch"
+             {% if route.is_branch == "true" %}checked{% endif %} />
+             This route is a branch</label>
+      <label id="route-mainline-wrap">Mainline route
+        <select name="mainlineRouteId" id="route-mainline">
+          <option value="">(unset)</option>
+          {% for r in all_routes %}
+            {% if r.id != route.id and r.is_branch != "true" %}
+            <option value="{{ r.id }}"
+                    data-direction="{{ r.direction }}"
+                    data-superior="{{ r.superior_direction }}"
+                    {% if r.id == route.mainline_route_id %}selected{% endif %}>
+              {{ r.name or r.id }}
+            </option>
+            {% endif %}
+          {% endfor %}
+        </select></label>
+      <label id="route-branch-start-wrap">Branch starts at
+        <select name="branchStartStopId" id="route-branch-start">
+          <option value="">(unset)</option>
+          <option value="{{ route.branch_start_stop_id }}" selected hidden>{{ route.branch_start_stop_id }}</option>
+        </select></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Stops</h3>
+    <p class="muted small" style="margin-top:-0.4rem">
+      Order the stations in the superior direction (easternmost first
+      for a westward superior route, northernmost first for a
+      southward superior route, etc.). <strong>Miles</strong> is the
+      distance to this stop from the previous one; first stop is 0.
+      <strong>Stop type</strong> is a railroad-local letter code
+      (<code>s</code>, <code>f</code>, <code>c</code>, ...). Facilities
+      and siding capacity live on the <a href="/operations/stations">Station</a>
+      itself.
+    </p>
+    <table id="route-stops-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Station</th>
+          <th>Pickups</th>
+          <th>Drops</th>
+          <th>Max car moves</th>
+          <th>Miles<br><span class="muted small">(from prev)</span></th>
+          <th>Stop type</th>
+          <th>Move</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in route.locations %}
+        <tr class="route-stop-row">
+          <td class="mono seq">{{ loop.index }}</td>
+          <td>
+            <select name="stop_stationId">
+              <option value="">(unset)</option>
+              {% for stn in stations %}
+              <option value="{{ stn.id }}" {% if stn.id == s.station_id %}selected{% endif %}>
+                {{ stn.name or stn.id }}
+              </option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><select name="stop_pickups">
+                <option value="yes" {% if s.pickups == "yes" %}selected{% endif %}>yes</option>
+                <option value="no"  {% if s.pickups == "no"  %}selected{% endif %}>no</option>
+              </select></td>
+          <td><select name="stop_drops">
+                <option value="yes" {% if s.drops == "yes" %}selected{% endif %}>yes</option>
+                <option value="no"  {% if s.drops == "no"  %}selected{% endif %}>no</option>
+              </select></td>
+          <td><input type="number" name="stop_maxCarMoves" value="{{ s.max_car_moves }}"
+                     min="0" max="99" style="width:5em" /></td>
+          <td><input type="number" name="stop_miles"
+                     value="{{ 0 if loop.first else s.miles }}"
+                     min="0" max="9999" step="0.1" style="width:6em"
+                     {% if loop.first %}readonly title="First stop has no previous"{% endif %} /></td>
+          <td><input type="text" name="stop_stopType" value="{{ s.stop_type }}"
+                     placeholder="s" style="width:4em" maxlength="4" /></td>
+          <td class="small">
+            <button type="button" data-stop-action="up"   title="Move up">&uarr;</button>
+            <button type="button" data-stop-action="down" title="Move down">&darr;</button>
+          </td>
+          <td>
+            <button type="button" class="danger" data-stop-action="remove"
+                    title="Remove stop">&times;</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="margin-top:0.5rem">
+      <button type="button" id="route-stop-add">+ Add stop</button>
+    </p>
+  </div>
+
+  <div class="card row" style="gap:0.5rem;align-items:baseline">
+    <button type="submit">Save</button>
+    <a href="/operations/routes" class="button">Cancel</a>
+    <span style="margin-left:auto"></span>
+    <button type="button" class="danger"
+            hx-delete="/operations/routes/{{ route.id }}"
+            hx-target="body" hx-swap="outerHTML"
+            hx-push-url="/operations/routes"
+            hx-confirm="Delete route {{ route.name or route.id }}?">Delete route</button>
+  </div>
+</form>
+
+<template id="route-stop-template">
+  <tr class="route-stop-row">
+    <td class="mono seq"></td>
+    <td>
+      <select name="stop_stationId">
+        <option value="">(unset)</option>
+        {% for stn in stations %}
+        <option value="{{ stn.id }}">{{ stn.name or stn.id }}</option>
+        {% endfor %}
+      </select>
+    </td>
+    <td><select name="stop_pickups"><option value="yes" selected>yes</option><option value="no">no</option></select></td>
+    <td><select name="stop_drops"><option value="yes" selected>yes</option><option value="no">no</option></select></td>
+    <td><input type="number" name="stop_maxCarMoves" value="5" min="0" max="99" style="width:5em" /></td>
+    <td><input type="number" name="stop_miles" value="0" min="0" max="9999" step="0.1" style="width:6em" /></td>
+    <td><input type="text" name="stop_stopType" placeholder="s" style="width:4em" maxlength="4" /></td>
+    <td class="small">
+      <button type="button" data-stop-action="up"   title="Move up">&uarr;</button>
+      <button type="button" data-stop-action="down" title="Move down">&darr;</button>
+    </td>
+    <td>
+      <button type="button" class="danger" data-stop-action="remove">&times;</button>
+    </td>
+  </tr>
+</template>
+
+<script id="route-mainline-stops"
+        type="application/json">{{ mainline_stops_json | safe }}</script>
+
+<script>
+(function() {
+  const table = document.getElementById("route-stops-table");
+  const tbody = table.querySelector("tbody");
+  const addBtn = document.getElementById("route-stop-add");
+  const template = document.getElementById("route-stop-template");
+
+  function renumber() {
+    tbody.querySelectorAll(".route-stop-row .seq").forEach((cell, i) => {
+      cell.textContent = String(i + 1);
+    });
+  }
+
+  addBtn.addEventListener("click", () => {
+    const frag = template.content.cloneNode(true);
+    tbody.appendChild(frag);
+    renumber();
+  });
+
+  tbody.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-stop-action]");
+    if (!btn) return;
+    const row = btn.closest(".route-stop-row");
+    if (!row) return;
+    const action = btn.dataset.stopAction;
+    if (action === "remove") {
+      row.remove();
+    } else if (action === "up" && row.previousElementSibling) {
+      row.parentNode.insertBefore(row, row.previousElementSibling);
+    } else if (action === "down" && row.nextElementSibling) {
+      row.parentNode.insertBefore(row.nextElementSibling, row);
+    }
+    renumber();
+  });
+})();
+
+(function() {
+  const dir = document.getElementById("route-direction");
+  const sup = document.getElementById("route-superior-direction");
+  const isBranch = document.getElementById("route-is-branch");
+  const mainline = document.getElementById("route-mainline");
+  const branchStart = document.getElementById("route-branch-start");
+  const mainlineWrap = document.getElementById("route-mainline-wrap");
+  const branchStartWrap = document.getElementById("route-branch-start-wrap");
+
+  const stopsNode = document.getElementById("route-mainline-stops");
+  let mainlineStops = {};
+  try { mainlineStops = JSON.parse(stopsNode.textContent || "{}"); } catch (_) {}
+
+  function filterSuperiorOptions() {
+    const pair = dir.value;
+    let keptSelection = false;
+    Array.from(sup.options).forEach((opt) => {
+      if (!opt.value) return;
+      const match = !pair || opt.dataset.pair === pair;
+      opt.hidden = !match;
+      opt.disabled = !match;
+      if (opt.selected && !match) opt.selected = false;
+      if (opt.selected) keptSelection = true;
+    });
+    if (!keptSelection && !sup.value) sup.selectedIndex = 0;
+  }
+
+  function applyBranchInheritance() {
+    if (!mainline.value) return;
+    const opt = mainline.options[mainline.selectedIndex];
+    const md = opt?.dataset.direction || "";
+    const ms = opt?.dataset.superior || "";
+    if (md) { dir.value = md; filterSuperiorOptions(); }
+    if (ms) sup.value = ms;
+  }
+
+  function rebuildBranchStart() {
+    const stops = mainlineStops[mainline.value] || [];
+    const current = branchStart.value;
+    branchStart.innerHTML = '<option value="">(unset)</option>';
+    stops.forEach((s) => {
+      const o = document.createElement("option");
+      o.value = s.station_id;
+      o.textContent = s.name;
+      if (s.station_id === current) o.selected = true;
+      branchStart.appendChild(o);
+    });
+  }
+
+  function syncBranchUI() {
+    const on = isBranch.checked;
+    mainlineWrap.style.display = on ? "" : "none";
+    branchStartWrap.style.display = on ? "" : "none";
+    // Branch inherits Direction + Superior from the mainline; disable
+    // the selects so the user understands they're derived. The server
+    // re-reads them from the mainline on save, so disabling (which
+    // skips them from the form submit) is safe.
+    dir.disabled = on;
+    sup.disabled = on;
+    if (!on) {
+      mainline.value = "";
+      branchStart.innerHTML = '<option value="">(unset)</option>';
+    } else {
+      // If a mainline is already picked, pull its direction now.
+      applyBranchInheritance();
+    }
+  }
+
+  dir.addEventListener("change", filterSuperiorOptions);
+  mainline.addEventListener("change", () => {
+    applyBranchInheritance();
+    rebuildBranchStart();
+  });
+  isBranch.addEventListener("change", syncBranchUI);
+
+  filterSuperiorOptions();
+  syncBranchUI();
+  if (isBranch.checked && mainline.value) rebuildBranchStart();
+})();
+</script>
+{% endblock %}
